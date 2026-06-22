@@ -1,0 +1,186 @@
+/* ── 重置 & 基础 ──────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* ── 头部 ────────────────────────────────────────── */
+.header {
+  text-align: center;
+  padding: 30px 0 20px;
+}
+.header h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+  color: #16213e;
+}
+.header p {
+  color: #666;
+  font-size: 15px;
+}
+
+/* ── 上传区 ──────────────────────────────────────── */
+.upload-section {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.upload-area {
+  border: 2px dashed #d0d5dd;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.upload-area:hover {
+  border-color: #4f46e5;
+  background: #f8f7ff;
+}
+
+.upload-placeholder { color: #666; }
+.upload-icon { font-size: 48px; display: block; margin-bottom: 12px; }
+.upload-hint { font-size: 13px; color: #999; margin-top: 6px; }
+
+.preview-img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+/* ── 按钮 ────────────────────────────────────────── */
+.btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: #4f46e5; color: #fff; }
+.btn-primary:hover { background: #4338ca; }
+.btn-secondary { background: #e5e7eb; color: #374151; }
+.btn-secondary:hover { background: #d1d5db; }
+
+/* ── 进度区 ──────────────────────────────────────── */
+.progress-section {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.progress-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.progress-fill {
+  height: 100%;
+  background: #4f46e5;
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.progress-steps {
+  font-size: 14px;
+  color: #666;
+}
+.progress-steps .step {
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-steps .step.done { color: #059669; }
+.progress-steps .step.active { color: #4f46e5; font-weight: 500; }
+.progress-steps .step .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d0d5dd;
+}
+.progress-steps .step.done .dot { background: #059669; }
+.progress-steps .step.active .dot { background: #4f46e5; animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── 结果区 ──────────────────────────────────────── */
+.result-section {
+  margin-bottom: 24px;
+}
+
+.report-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  line-height: 1.8;
+}
+.report-card h2 { font-size: 20px; margin: 16px 0 8px; color: #16213e; }
+.report-card h3 { font-size: 16px; margin: 12px 0 6px; color: #374151; }
+.report-card ul { padding-left: 20px; }
+.report-card table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.report-card th, .report-card td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+.report-card th { background: #f9fafb; font-weight: 600; }
+
+.result-actions {
+  text-align: center;
+  margin-top: 16px;
+}
+
+/* ── 历史档案 ───────────────────────────────────── */
+.history-section {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.history-section h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #16213e;
+}
+
+.history-list .history-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.history-list .history-item:hover { background: #f8f7ff; }
+.history-list .history-item:last-child { border-bottom: none; }
+.history-list .history-time { font-size: 13px; color: #999; }
+.history-list .history-preview { font-size: 14px; color: #374151; margin-top: 4px; }
+
+.empty-hint { color: #999; font-size: 14px; text-align: center; padding: 20px 0; }

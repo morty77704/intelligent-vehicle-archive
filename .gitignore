@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# 模型文件（太大，不进 git）
+*.pt
+*.pth
+*.onnx
+*.bin
+model/
+
+# Node
+node_modules/
+
+# 数据库
+*.db
+*.db-journal
+
+# 环境变量
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db

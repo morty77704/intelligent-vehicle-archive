@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能车辆档案系统</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <h1>🚗 智能车辆档案系统</h1>
+      <p>拍照上传，AI 自动生成完整车辆档案</p>
+    </header>
+
+    <!-- 上传区 -->
+    <section class="upload-section" id="uploadSection">
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+        <div class="upload-placeholder">
+          <span class="upload-icon">📸</span>
+          <p>点击上传车辆图片 或 拍照</p>
+          <p class="upload-hint">支持 JPG / PNG，建议拍摄车辆正面</p>
+        </div>
+        <img id="preview" class="preview-img" style="display:none">
+      </div>
+      <div class="upload-actions" id="uploadActions" style="display:none">
+        <button class="btn btn-secondary" id="btnRetake">重新拍照</button>
+        <button class="btn btn-primary" id="btnAnalyze">开始分析</button>
+      </div>
+    </section>
+
+    <!-- 进度区 -->
+    <section class="progress-section" id="progressSection" style="display:none">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-steps" id="progressSteps"></div>
+    </section>
+
+    <!-- 结果区 -->
+    <section class="result-section" id="resultSection" style="display:none">
+      <div class="report-card" id="reportContent"></div>
+      <div class="result-actions">
+        <button class="btn btn-primary" id="btnNew">分析新车</button>
+      </div>
+    </section>
+
+    <!-- 历史档案 -->
+    <section class="history-section" id="historySection">
+      <h2>📋 历史档案</h2>
+      <div class="history-list" id="historyList">
+        <p class="empty-hint">暂无档案记录</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
