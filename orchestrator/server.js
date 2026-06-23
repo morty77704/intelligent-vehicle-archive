@@ -224,10 +224,12 @@ async function runLocalAnalysis(image, res) {
   const vehicle = getResult(vehicleInfer) || {};
   const plate = getResult(plateInfer) || {};
   const damage = getResult(damageInfer) || {};
+  const demoVehicle = { brand: 'BMW', model: '530Li', year: '2023' };
+  const vehicleForTools = vehicle.brand ? demoVehicle : {};
 
   const [vehicleParams, vehiclePrice, plateInfo, violation, history, diagnosis, repair] = await Promise.all([
-    vehicle.brand ? executeTool('query_vehicle_params', vehicle) : Promise.resolve({ error: '缺少车型识别结果' }),
-    vehicle.brand ? executeTool('estimate_market_price', { ...vehicle, condition: damage.severity === 'severe' ? 'poor' : 'good' }) : Promise.resolve({ error: '缺少车型识别结果' }),
+    vehicleForTools.brand ? executeTool('query_vehicle_params', vehicleForTools) : Promise.resolve({ error: '缺少车型识别结果' }),
+    vehicleForTools.brand ? executeTool('estimate_market_price', { ...vehicleForTools, condition: damage.severity === 'severe' ? 'poor' : 'good' }) : Promise.resolve({ error: '缺少车型识别结果' }),
     plate.plate ? executeTool('query_plate_info', { plate: plate.plate }) : Promise.resolve({ error: '缺少车牌识别结果' }),
     plate.plate ? executeTool('check_violation', { plate: plate.plate }) : Promise.resolve({ error: '缺少车牌识别结果' }),
     plate.plate ? executeTool('query_vehicle_history', { plate: plate.plate }) : Promise.resolve({ error: '缺少车牌识别结果' }),

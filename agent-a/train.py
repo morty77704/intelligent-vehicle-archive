@@ -32,7 +32,7 @@ parser.add_argument("--num_workers", type=int, default=4)
 parser.add_argument("--val_split", type=float, default=0.15)
 parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 parser.add_argument("--output_dir", default="model")
-args = parser.parse_args()
+args, _ = parser.parse_known_args()
 
 os.makedirs(args.output_dir, exist_ok=True)
 
