@@ -4,28 +4,22 @@ __pycache__/
 *.egg-info/
 venv/
 .venv/
-.pytest_cache/
 
-# Model files and generated artifacts
+# 模型文件（太大，不进 git）
 *.pt
 *.pth
 *.onnx
 *.bin
-*.ckpt
-agent-c/model/weights/*
-!agent-c/model/weights/.gitkeep
-
-# Local datasets
-archive/
+model/
 
 # Node
 node_modules/
 
-# Databases
+# 数据库
 *.db
 *.db-journal
 
-# Environment variables
+# 环境变量
 .env
 
 # IDE
@@ -34,6 +28,6 @@ node_modules/
 *.swp
 *.swo
 
-# System
+# 系统
 .DS_Store
 Thumbs.db
