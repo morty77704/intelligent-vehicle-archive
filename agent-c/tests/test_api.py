@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
+from pathlib import Path
+import sys
 
 from fastapi.testclient import TestClient
 from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.modules.pop("api", None)
+sys.modules.pop("model", None)
+sys.modules.pop("tools", None)
 
 from api.server import app
 
@@ -59,6 +66,15 @@ def test_repair_tool_contract():
     response = client.post(
         "/api/damage/tools/repair",
         json={"params": {"diagnosis": "前保险杠中度划痕，建议局部喷漆修复"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_repair_tool_accepts_orchestrator_params():
+    response = client.post(
+        "/api/damage/tools/repair",
+        json={"params": {"conditions": ["scratch_front_bumper"], "severity": "moderate"}},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "ok"

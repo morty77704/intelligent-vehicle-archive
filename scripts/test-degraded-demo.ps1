@@ -61,8 +61,9 @@ function Wait-Orchestrator {
 }
 
 function Invoke-Analyze {
+    $demoImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lKgFJwAAAABJRU5ErkJggg=="
     $body = @{
-        image = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("demo-image"))
+        image = $demoImage
         query = "degraded test"
     } | ConvertTo-Json
 

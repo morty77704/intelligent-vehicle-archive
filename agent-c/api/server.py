@@ -78,7 +78,13 @@ def diagnose(request: ToolRequest) -> dict:
 
 @app.post("/api/damage/tools/repair")
 def repair(request: ToolRequest) -> dict:
-    diagnosis = request.params.get("diagnosis")
+    params = request.params
+    diagnosis = params.get("diagnosis")
+    if not diagnosis:
+        conditions = params.get("conditions")
+        severity = params.get("severity", "mild")
+        if isinstance(conditions, list):
+            diagnosis = diagnose_damage(conditions, severity).get("diagnosis")
     if not diagnosis:
         return error_response("INVALID_PARAMS", "params.diagnosis 为必填参数")
     return {"status": "ok", "data": estimate_repair(diagnosis)}
