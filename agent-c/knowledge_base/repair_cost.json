@@ -1,0 +1,39 @@
+{
+  "normal": {
+    "repair_plan": "无需维修，建议保持日常检查",
+    "estimated_cost": "0元",
+    "estimated_time": "0天",
+    "shop_type": "无需进店"
+  },
+  "scratch": {
+    "repair_plan": "局部抛光、补漆或单面喷漆",
+    "estimated_cost": "300-1200元",
+    "estimated_time": "0.5-2天",
+    "shop_type": "普通维修店或4S店"
+  },
+  "paint": {
+    "repair_plan": "打磨除锈、补土找平、局部或整面喷漆",
+    "estimated_cost": "600-1800元",
+    "estimated_time": "1-3天",
+    "shop_type": "普通维修店或4S店"
+  },
+  "dent": {
+    "repair_plan": "无痕修复或钣金整形后喷漆",
+    "estimated_cost": "800-2500元",
+    "estimated_time": "1-3天",
+    "shop_type": "钣金喷漆维修店或4S店"
+  },
+  "glass": {
+    "repair_plan": "玻璃修补或更换玻璃",
+    "estimated_cost": "500-3000元",
+    "estimated_time": "0.5-1天",
+    "shop_type": "玻璃专修店或4S店"
+  },
+  "light": {
+    "repair_plan": "检查线路与密封，必要时更换车灯总成",
+    "estimated_cost": "500-4000元",
+    "estimated_time": "0.5-2天",
+    "shop_type": "4S店或专业维修店"
+  }
+}
+
