@@ -57,25 +57,25 @@
 ## Agent C — 车况检测 (member-c)
 
 ### 模型
-- [ ] 下载 Car Damage Detection 数据集
-- [ ] 数据预处理 + 标签映射
-- [ ] 多标签分类模型训练
-- [ ] 模型调优
+- [x] 下载 Car Damage Detection 数据集
+- [x] 数据预处理 + 标签映射
+- [x] 多标签分类模型训练
+- [x] 模型调优
 
 ### API (FastAPI, 端口 8003)
-- [ ] `GET /api/damage/health` 健康检查
-- [ ] `POST /api/damage/infer` 车况推理
-- [ ] `POST /api/damage/tools/diagnose` 损伤诊断
-- [ ] `POST /api/damage/tools/repair` 维修方案
-- [ ] `POST /api/damage/tools/insurance` 保险建议
+- [x] `GET /api/damage/health` 健康检查
+- [x] `POST /api/damage/infer` 车况推理
+- [x] `POST /api/damage/tools/diagnose` 损伤诊断
+- [x] `POST /api/damage/tools/repair` 维修方案
+- [x] `POST /api/damage/tools/insurance` 保险建议
 
 ### 工具
-- [ ] `diagnose_damage` 实现（维修知识库）
-- [ ] `estimate_repair` 实现（费用估算）
-- [ ] `recommend_insurance` 实现（理赔建议）
+- [x] `diagnose_damage` 实现（维修知识库）
+- [x] `estimate_repair` 实现（费用估算）
+- [x] `recommend_insurance` 实现（理赔建议）
 
 ### 测试
-- [ ] API 契约测试（对照 CONTRACT.md）
+- [x] API 契约测试（对照 CONTRACT.md）
 
 ---
 
