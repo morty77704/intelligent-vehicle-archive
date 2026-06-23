@@ -5,7 +5,9 @@ __pycache__/
 venv/
 .venv/
 
-# 模型文件（太大，不进 git）
+# 数据集和模型文件（太大，不进 git）
+data/
+
 *.pt
 *.pth
 *.onnx
