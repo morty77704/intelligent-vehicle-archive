@@ -1,6 +1,7 @@
 fastapi>=0.104.0
 uvicorn>=0.24.0
 ultralytics>=8.0.0
-paddleocr>=2.7.0
-paddlepaddle>=2.5.0
 Pillow>=10.0.0
+
+# PaddleOCR is version-sensitive on Windows.
+# Verified OCR env: Python 3.9 + paddleocr==2.7.3 + paddlepaddle==2.6.2 + numpy==1.26.4
