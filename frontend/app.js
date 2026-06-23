@@ -91,6 +91,20 @@ const STEPS = [
   { key: 'report',            label: '生成档案报告...' },
 ];
 
+const STEP_BY_TOOL = {
+  recognize_vehicle: 'recognize_vehicle',
+  detect_plate: 'detect_plate',
+  assess_condition: 'assess_condition',
+  query_vehicle_params: 'query',
+  estimate_market_price: 'query',
+  query_plate_info: 'query',
+  check_violation: 'query',
+  query_vehicle_history: 'query',
+  diagnose_damage: 'query',
+  estimate_repair: 'query',
+  recommend_insurance: 'query',
+};
+
 async function startAnalysis() {
   if (!currentImageBase64) return;
 
@@ -105,7 +119,7 @@ async function startAnalysis() {
     `<div class="step" id="step-${s.key}"><span class="dot"></span>${s.label}</div>`
   ).join('');
 
-  let completedSteps = 0;
+  const completedStepKeys = new Set();
 
   try {
     const response = await fetch('/api/analyze', {
@@ -132,12 +146,13 @@ async function startAnalysis() {
           const data = JSON.parse(line.slice(6));
           handleSSE(data);
           if (data.type === 'step' && data.tool) {
-            completedSteps++;
-            updateStep(data.tool);
-            progressFill.style.width = `${(completedSteps / STEPS.length) * 100}%`;
+            const stepKey = STEP_BY_TOOL[data.tool] || data.tool;
+            completedStepKeys.add(stepKey);
+            updateStep(stepKey);
+            progressFill.style.width = `${Math.min(completedStepKeys.size / STEPS.length, 0.9) * 100}%`;
           }
           if (data.type === 'report') {
-            completedSteps = STEPS.length;
+            completedStepKeys.add('report');
             updateStep('report');
             progressFill.style.width = '100%';
             reportContent.innerHTML = marked.parse(data.content || '分析完成');

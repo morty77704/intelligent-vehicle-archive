@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *.egg-info/
 venv/
@@ -11,6 +12,10 @@ venv/
 *.onnx
 *.bin
 model/
+agent-b/model/weights/
+
+# 数据集与生成标注（太大，不进 git）
+agent-b/data/
 
 # Node
 node_modules/
@@ -18,6 +23,8 @@ node_modules/
 # 数据库
 *.db
 *.db-journal
+orchestrator/archive.json
+scripts/.demo-pids.json
 
 # 环境变量
 .env
