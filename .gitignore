@@ -12,11 +12,14 @@ venv/
 *.onnx
 *.bin
 *.ckpt
+model/
+agent-b/model/weights/
 agent-c/model/weights/*
 !agent-c/model/weights/.gitkeep
 
 # Local datasets
 data/
+agent-b/data/
 archive/
 
 # Node
@@ -25,6 +28,8 @@ node_modules/
 # Databases
 *.db
 *.db-journal
+orchestrator/archive.json
+scripts/.demo-pids.json
 
 # Environment variables
 .env

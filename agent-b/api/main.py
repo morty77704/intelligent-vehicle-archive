@@ -3,18 +3,21 @@
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
 import time
+
+try:
+    from .recognizer import build_recognizer
+    from .plate_rules import is_valid_plate, normalize_plate, parse_plate, short_location
+except ImportError:  # pragma: no cover - allows `python api/main.py` style execution
+    from recognizer import build_recognizer
+    from plate_rules import is_valid_plate, normalize_plate, parse_plate, short_location
 
 app = FastAPI(title="Agent B - Plate Recognition")
 
 # ============================================================
 # 模型加载（占位，训练完成后替换）
 # ============================================================
-# from ultralytics import YOLO
-# from paddleocr import PaddleOCR
-# detect_model = YOLO("model/plate_detect.pt")
-# ocr = PaddleOCR(use_angle_cls=True, lang="ch")
+plate_recognizer = build_recognizer()
 
 # ============================================================
 # 模拟数据（后续替换为实际数据库或 API）
@@ -23,7 +26,9 @@ app = FastAPI(title="Agent B - Plate Recognition")
 PLATE_INFO_DB = {
     "京A12345": {"location": "北京市", "plate_type": "蓝牌", "vehicle_type": "小型汽车", "is_new_energy": False},
     "沪B67890": {"location": "上海市", "plate_type": "蓝牌", "vehicle_type": "小型汽车", "is_new_energy": False},
-    "粤BDF5678": {"location": "深圳市", "plate_type": "绿牌", "vehicle_type": "小型汽车", "is_new_energy": True},
+    "粤BDF5678": {"location": "广东省", "plate_type": "绿牌", "vehicle_type": "小型汽车", "is_new_energy": True},
+    "沪AD12345": {"location": "上海市", "plate_type": "绿牌", "vehicle_type": "小型汽车", "is_new_energy": True},
+    "京A12345D": {"location": "北京市", "plate_type": "绿牌", "vehicle_type": "大型新能源汽车", "is_new_energy": True},
 }
 
 VIOLATION_DB = {
@@ -43,23 +48,11 @@ HISTORY_DB = {
 }
 
 # ============================================================
-# 车牌编码规则解析
-# ============================================================
-
-def parse_plate(plate: str) -> dict:
-    """根据车牌号解析归属地"""
-    province_map = {"京": "北京", "沪": "上海", "粤": "广东", "苏": "江苏", "浙": "浙江"}
-
-    info = {"plate": plate, "location": "未知", "plate_type": "蓝牌", "vehicle_type": "小型汽车", "is_new_energy": False}
-
-    if len(plate) >= 1 and plate[0] in province_map:
-        info["location"] = province_map[plate[0]]
-
-    if len(plate) >= 7 and len(plate) <= 8:
-        info["is_new_energy"] = len(plate) == 8
-        info["plate_type"] = "绿牌" if info["is_new_energy"] else "蓝牌"
-
-    return info
+def require_plate(params: dict) -> str:
+    plate = normalize_plate(params.get("plate", ""))
+    if not is_valid_plate(plate):
+        raise HTTPException(status_code=400, detail="车牌号格式不正确")
+    return plate
 
 # ============================================================
 # 模型定义
@@ -86,24 +79,23 @@ class ToolResponse(BaseModel):
 
 @app.get("/api/plate/health")
 def health():
-    return {"status": "ok", "model_loaded": False, "model_name": "yolov8-paddleocr-plate"}
+    return {
+        "status": "ok",
+        "model_loaded": plate_recognizer.model_loaded,
+        "model_name": plate_recognizer.model_name,
+    }
 
 @app.post("/api/plate/infer", response_model=InferResponse)
 def infer(req: InferRequest):
     t0 = time.time()
 
-    # TODO: 实际推理
-    # img_bytes = base64.b64decode(req.image)
-    # img = Image.open(io.BytesIO(img_bytes))
-    # results = detect_model(img)
-    # crop plate region -> OCR
+    if not req.image:
+        raise HTTPException(status_code=400, detail="请提供 base64 图片")
 
-    result = {
-        "plate": "京A12345",
-        "plate_type": "蓝牌",
-        "location": "北京",
-        "confidence": 0.97
-    }
+    try:
+        result = plate_recognizer.recognize(req.image).as_dict()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return InferResponse(
         status="ok",
@@ -113,19 +105,19 @@ def infer(req: InferRequest):
 
 @app.post("/api/plate/tools/plate_info", response_model=ToolResponse)
 def tool_plate_info(req: ToolRequest):
-    plate = req.params.get("plate", "")
+    plate = require_plate(req.params)
     data = PLATE_INFO_DB.get(plate) or parse_plate(plate)
-    return ToolResponse(status="ok", data=data)
+    return ToolResponse(status="ok", data={"plate": plate, **data})
 
 @app.post("/api/plate/tools/violation", response_model=ToolResponse)
 def tool_violation(req: ToolRequest):
-    plate = req.params.get("plate", "")
+    plate = require_plate(req.params)
     records = VIOLATION_DB.get(plate, [])
     return ToolResponse(status="ok", data={"total_count": len(records), "records": records})
 
 @app.post("/api/plate/tools/history", response_model=ToolResponse)
 def tool_history(req: ToolRequest):
-    plate = req.params.get("plate", "")
+    plate = require_plate(req.params)
     data = HISTORY_DB.get(plate, {
         "last_inspection": "暂无记录",
         "next_inspection": "暂无记录",
