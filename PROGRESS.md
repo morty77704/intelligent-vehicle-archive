@@ -7,24 +7,24 @@
 ## Agent A — 车型识别 (member-a)
 
 ### 模型
-- [ ] 下载 Stanford Cars / CompCars 数据集
-- [ ] 数据预处理 + 标注格式统一
-- [ ] EfficientNet-B3 / ResNet50 基线训练
-- [ ] 模型调优（准确率 ≥ 85%）
-- [ ] 模型导出（.pt / .onnx）
+- [x] 下载 Stanford Cars / CompCars 数据集 (8146训练+8041测试, 196类)
+- [x] 数据预处理 + 标注格式统一 (85/15 train/val split)
+- [x] EfficientNet-B3 / ResNet50 基线训练 (EfficientNet-B3, AMP混合精度)
+- [x] 模型调优（准确率 ≥ 85%）(验证集 90.25%, epoch 48 best)
+- [x] 模型导出（.pt / .onnx）(best.pt 133MB + classes.txt)
 
 ### API (FastAPI, 端口 8001)
-- [ ] `GET /api/vehicle/health` 健康检查
-- [ ] `POST /api/vehicle/infer` 车型推理
-- [ ] `POST /api/vehicle/tools/params` 参数查询
-- [ ] `POST /api/vehicle/tools/price` 估价
+- [x] `GET /api/vehicle/health` 健康检查 (model_loaded=true)
+- [x] `POST /api/vehicle/infer` 车型推理 (推理延迟 ~92ms)
+- [x] `POST /api/vehicle/tools/params` 参数查询 (28款车型)
+- [x] `POST /api/vehicle/tools/price` 估价 (4档车况+车龄折旧)
 
 ### 工具
-- [ ] `query_vehicle_params` 实现（车型参数数据整理）
-- [ ] `estimate_market_price` 实现（估价逻辑）
+- [x] `query_vehicle_params` 实现（车型参数数据整理, 含品牌名规范化）
+- [x] `estimate_market_price` 实现（估价逻辑, baseline+condition+age）
 
 ### 测试
-- [ ] API 契约测试（对照 CONTRACT.md）
+- [x] API 契约测试（对照 CONTRACT.md, 全部接口响应格式验证通过）
 
 ---
 
