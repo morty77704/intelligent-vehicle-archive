@@ -609,7 +609,7 @@ async function showDetail(id) {
       $modalContent.innerHTML = `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(report)}</pre>`;
     }
     $modalOverlay.style.display = 'flex';
-    gsap.from('.modal-card', { scale: 0.95, opacity: 0, duration: 0.25, ease: 'power3.out' });
+    gsap.fromTo('.modal-card', { scale: 0.95, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.25, ease: 'power3.out' });
     document.body.style.overflow = 'hidden';
   } catch (e) {
     alert('加载详情失败：' + e.message);
