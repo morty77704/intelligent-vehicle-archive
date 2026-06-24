@@ -68,18 +68,23 @@ function dbRun(sql, params = []) {
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
 
-const SYSTEM_PROMPT = `你是智能车辆档案系统助手。你可以使用工具来识别车辆信息。
+const SYSTEM_PROMPT = `你是一个专业的智能车辆助手。你可以进行日常对话，也能使用工具对车辆图片进行分析。
 
-工作流程：
-1. 用户上传车辆图片后，同时调用 recognize_vehicle、detect_plate、assess_condition 获取基本信息
-2. 根据识别结果，调用相应的查询工具获取详细信息
-3. 最后整合所有信息，生成一份完整的车辆档案报告
+## 对话能力
+- 友好回答用户的日常问题（如问候、车辆知识咨询等）
+- 可以对比不同车型的优劣、参数、价格
+- 回答关于汽车的任何问题
 
-报告格式要求：
-- 用 Markdown 格式
-- 包含：车型信息、车牌信息、车况评估、维修建议
-- 语言简洁专业
-- 如果某个识别结果置信度偏低，要提醒用户`;
+## 车辆分析能力（当用户上传图片时）
+当用户上传了车辆图片，你需要：
+1. 调用工具获取识别结果
+2. 根据识别结果调用查询工具获取详细信息
+3. 整合生成完整的 Markdown 车辆档案报告
+
+## 报告格式
+用 Markdown，包含车型/车牌/车况/维修建议/估价。
+如果置信度偏低要提醒用户。
+语言简洁专业，不使用emoji。`;
 
 // ── 工具执行器 ────────────────────────────────────────────
 async function executeTool(name, args) {
@@ -253,10 +258,38 @@ async function chatWithLLM(inferenceResults, res) {
   return '已达到最大推理轮次，请稍后重试。';
 }
 
+// ── 纯文本对话 ──────────────────────────────────────────
+async function chatTextOnly(query, res) {
+  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: query },
+      ],
+      temperature: 0.7,
+      max_tokens: 2048,
+    }),
+    signal: AbortSignal.timeout(60000)
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`DeepSeek API 错误: ${response.status} - ${err}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
 // ── 主入口 ────────────────────────────────────────────────
 app.post('/api/analyze', async (req, res) => {
   const { image, query } = req.body;
-  if (!image) return res.status(400).json({ error: { code: 'NO_IMAGE', message: '请提供车辆图片' } });
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -265,13 +298,18 @@ app.post('/api/analyze', async (req, res) => {
   });
 
   try {
-    res.write(`data: ${JSON.stringify({ type: 'step', content: '正在识别车辆信息...' })}\n\n`);
+    let report;
 
-    // 阶段一：三模型并行推理
-    const inferenceResults = await runInferencePhase(image, res);
-
-    // 阶段二：DeepSeek 查看文本结果 + 调用查询工具 + 生成报告
-    const report = await chatWithLLM(inferenceResults, res);
+    if (image && image.length > 100) {
+      // 有图片：先推理再生成报告
+      res.write(`data: ${JSON.stringify({ type: 'step', content: '正在识别车辆信息...' })}\n\n`);
+      const inferenceResults = await runInferencePhase(image, res);
+      report = await chatWithLLM(inferenceResults, res);
+    } else {
+      // 纯文本：直接对话
+      res.write(`data: ${JSON.stringify({ type: 'step', content: '思考中...' })}\n\n`);
+      report = await chatTextOnly(query || '你好', res);
+    }
 
     if (report) {
       dbRun('INSERT INTO archives (image_path, full_report) VALUES (?, ?)', ['', report]);
