@@ -157,21 +157,6 @@ body { display: flex; }
 .msg-tool { font-size: 12px; color: var(--c-text-secondary); padding: 4px 10px; background: rgba(99,102,241,0.06); border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; margin: 2px 0; }
 .msg-tool .tool-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-success); }
 
-/* ── 3D 查看器面板 ─────────────────────────────────────── */
-.viewer-panel {
-  border-top: 1px solid var(--c-border);
-  background: rgba(13,16,24,0.9);
-  backdrop-filter: blur(12px);
-  padding: 12px 24px;
-}
-.viewer-container {
-  height: 240px; background: rgba(0,0,0,0.3);
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-.viewer-container canvas { display: block; }
-.viewer-placeholder { color: var(--c-text-secondary); font-size: 13px; }
-
 /* ── 输入区 ────────────────────────────────────────────── */
 .composer { padding: 12px 24px 16px; border-top: 1px solid var(--c-border); background: rgba(13,16,24,0.8); }
 

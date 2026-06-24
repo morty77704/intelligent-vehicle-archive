@@ -36,22 +36,12 @@
         <p>上传车辆照片或输入问题，AI 自动生成完整档案</p>
       </div>
       <div class="header-actions">
-        <button id="btnToggle3D" class="btn btn-ghost btn-sm" title="3D预览">3D</button>
         <button id="btnClearChat" class="btn btn-ghost btn-sm">清空</button>
       </div>
     </header>
 
     <!-- 消息区 -->
     <section class="chat-messages" id="chatMessages"></section>
-
-    <!-- 3D 查看器（可收起） -->
-    <section class="viewer-panel" id="viewerPanel" style="display:none">
-      <div class="viewer-container" id="viewerContainer">
-        <div class="viewer-placeholder">
-          <span id="viewerPlaceholder">完成分析后显示 3D 预览</span>
-        </div>
-      </div>
-    </section>
 
     <!-- 输入区 -->
     <section class="composer" id="composer">
@@ -73,15 +63,7 @@
 
   </main>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script type="module" src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
