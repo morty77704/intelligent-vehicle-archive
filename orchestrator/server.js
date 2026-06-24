@@ -177,6 +177,82 @@ async function chatWithTools(messages, res) {
   return '已达到最大推理轮次，请稍后重试。';
 }
 
+// ── 第一阶段：预调用推理工具（图片→文本） ─────────────────
+async function runInferencePhase(image, res) {
+  const inferTools = ['recognize_vehicle', 'detect_plate', 'assess_condition'];
+  const results = {};
+
+  await Promise.all(inferTools.map(async (toolName) => {
+    const result = await executeTool(toolName, { image });
+    results[toolName] = result;
+    res.write(`data: ${JSON.stringify({ type: 'step', tool: toolName, result: !!result.status })}\n\n`);
+  }));
+
+  return results;
+}
+
+// ── 第二阶段：DeepSeek 对话 → 查工具 → 生成报告 ──────────
+async function chatWithLLM(inferenceResults, res) {
+  const context = `以下是车辆图片的AI识别结果：
+
+1. 车型识别：${JSON.stringify(inferenceResults.recognize_vehicle)}
+2. 车牌识别：${JSON.stringify(inferenceResults.detect_plate)}
+3. 车况检测：${JSON.stringify(inferenceResults.assess_condition)}
+
+请基于以上信息，调用相关查询工具获取更多细节，最后生成一份完整的车辆档案报告。`;
+
+  const messages = [{ role: 'user', content: context }];
+  const history = [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
+
+  for (let turn = 0; turn < 10; turn++) {
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: history,
+        tools: ALL_TOOLS,
+        temperature: 0.7,
+        max_tokens: 4096
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`DeepSeek API 错误: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    const msg = data.choices[0].message;
+    history.push(msg);
+
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      const toolResults = await Promise.all(
+        msg.tool_calls.map(async (tc) => {
+          const args = JSON.parse(tc.function.arguments);
+          // 推理工具已经调用过了，跳过（避免重复推理返回不同结果）
+          if (['recognize_vehicle', 'detect_plate', 'assess_condition'].includes(tc.function.name)) {
+            return { role: 'tool', tool_call_id: tc.id, content: JSON.stringify(inferenceResults[tc.function.name]) };
+          }
+          const result = await executeTool(tc.function.name, args);
+          res.write(`data: ${JSON.stringify({ type: 'step', tool: tc.function.name, result: !!result.status })}\n\n`);
+          return { role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) };
+        })
+      );
+      history.push(...toolResults);
+      continue;
+    }
+
+    return msg.content;
+  }
+
+  return '已达到最大推理轮次，请稍后重试。';
+}
+
 // ── 主入口 ────────────────────────────────────────────────
 app.post('/api/analyze', async (req, res) => {
   const { image, query } = req.body;
@@ -189,21 +265,14 @@ app.post('/api/analyze', async (req, res) => {
   });
 
   try {
-    res.write(`data: ${JSON.stringify({ type: 'step', content: '正在分析车辆信息...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'step', content: '正在识别车辆信息...' })}\n\n`);
 
-    const messages = [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: query || '请帮我识别这辆车，生成完整的车辆档案' },
-          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } }
-        ]
-      }
-    ];
+    // 阶段一：三模型并行推理
+    const inferenceResults = await runInferencePhase(image, res);
 
-    const report = await chatWithTools(messages, res);
+    // 阶段二：DeepSeek 查看文本结果 + 调用查询工具 + 生成报告
+    const report = await chatWithLLM(inferenceResults, res);
 
-    // 保存档案
     if (report) {
       dbRun('INSERT INTO archives (image_path, full_report) VALUES (?, ?)', ['', report]);
     }
