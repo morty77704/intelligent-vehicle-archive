@@ -7,53 +7,98 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <!-- 头部 -->
+
+  <!-- ============================================================ -->
+  <!-- 分析页 -->
+  <!-- ============================================================ -->
+  <main class="view" id="analysisView">
+
     <header class="header">
-      <h1>🚗 智能车辆档案系统</h1>
-      <p>拍照上传，AI 自动生成完整车辆档案</p>
+      <h1>智能车辆档案系统</h1>
+      <p>拍一张车，AI 自动生成完整档案</p>
     </header>
 
     <!-- 上传区 -->
-    <section class="upload-section" id="uploadSection">
+    <section class="card upload-section" id="uploadSection">
       <div class="upload-area" id="uploadArea">
         <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-        <div class="upload-placeholder">
-          <span class="upload-icon">📸</span>
-          <p>点击上传车辆图片 或 拍照</p>
+        <div class="upload-placeholder" id="placeholder">
+          <span class="upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+              <path d="M21 15l-5-5L5 21"/>
+            </svg>
+          </span>
+          <p>点击上传车辆图片 或 拖拽到此处</p>
           <p class="upload-hint">支持 JPG / PNG，建议拍摄车辆正面</p>
         </div>
-        <img id="preview" class="preview-img" style="display:none">
+        <img id="preview" class="preview-img" style="display:none" alt="预览">
       </div>
       <div class="upload-actions" id="uploadActions" style="display:none">
-        <button class="btn btn-secondary" id="btnRetake">重新拍照</button>
-        <button class="btn btn-primary" id="btnAnalyze">开始分析</button>
+        <button class="btn btn-ghost" id="btnRetake">重新选择</button>
+        <button class="btn btn-primary" id="btnAnalyze">
+          <span class="btn-icon">&#9654;</span> 开始分析
+        </button>
       </div>
     </section>
 
     <!-- 进度区 -->
-    <section class="progress-section" id="progressSection" style="display:none">
+    <section class="card progress-section" id="progressSection" style="display:none">
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
       <div class="progress-steps" id="progressSteps"></div>
     </section>
 
     <!-- 结果区 -->
     <section class="result-section" id="resultSection" style="display:none">
-      <div class="report-card" id="reportContent"></div>
+      <div class="card report-card" id="reportContent"></div>
       <div class="result-actions">
         <button class="btn btn-primary" id="btnNew">分析新车</button>
       </div>
     </section>
 
-    <!-- 历史档案 -->
-    <section class="history-section" id="historySection">
-      <h2>📋 历史档案</h2>
-      <div class="history-list" id="historyList">
-        <p class="empty-hint">暂无档案记录</p>
-      </div>
-    </section>
-  </div>
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+      <button class="nav-link" id="btnToHistory">
+        <span>&#128203;</span> 查看历史档案
+      </button>
+    </nav>
 
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- 历史页 -->
+  <!-- ============================================================ -->
+  <main class="view" id="historyView" style="display:none">
+
+    <div class="top-bar">
+      <button class="btn btn-ghost" id="btnBack">
+        <span>&#8592;</span> 返回
+      </button>
+      <h2>&#128203; 历史档案</h2>
+      <div style="width:80px"></div>
+    </div>
+
+    <section class="history-list" id="historyList">
+      <p class="empty-hint">暂无档案记录</p>
+    </section>
+
+    <!-- 详情（覆盖列表）-->
+    <section class="history-detail" id="historyDetail" style="display:none">
+      <div class="top-bar">
+        <button class="btn btn-ghost" id="btnBackList">
+          <span>&#8592;</span> 返回列表
+        </button>
+        <h2>档案详情</h2>
+        <div style="width:80px"></div>
+      </div>
+      <div class="card detail-content" id="detailContent"></div>
+    </section>
+
+  </main>
+
+  <!-- CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
