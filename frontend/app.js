@@ -1,6 +1,9 @@
 /* ============================================================
-   智能车辆档案助手 — v3 简化稳健版
+   智能车辆档案助手 — GLB 3D 模型版
    ============================================================ */
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
 (function () {
   'use strict';
 
@@ -358,7 +361,7 @@
     ring.rotation.x = -Math.PI / 2; ring.position.y = -1.21; scene.add(ring);
 
     carGroup = new THREE.Group();
-    buildCar(carGroup);
+    loadDefaultModel(carGroup);
     carGroup.rotation.y = 0.3;
     scene.add(carGroup);
 
@@ -380,94 +383,84 @@
     animateViewer();
   }
 
-  function buildCar(group) {
-    var paint = new THREE.MeshStandardMaterial({ color: 0xc0c8e0, roughness: 0.18, metalness: 0.8 });
-    var plastic = new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.55, metalness: 0.1 });
-    var chrome = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.1, metalness: 0.95 });
-    var glass = new THREE.MeshPhysicalMaterial({ color: 0x111122, roughness: 0.03, metalness: 0.05, opacity: 0.5, transparent: true });
-    var lightM = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, emissive: 0xffffff, emissiveIntensity: 1.2 });
-    var tailM = new THREE.MeshStandardMaterial({ color: 0xff1111, roughness: 0.05, emissive: 0x440000, emissiveIntensity: 1 });
-    var tireM = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-    var rimM = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.05, metalness: 0.95 });
+  // ── 车体类型 → GLB 模型映射 ─────────────────────────
+  var TYPE_MAP = {
+    // 轿车
+    sedan: ['Sedan', 'Hatchback', 'Wagon', 'Convertible', 'Minivan'],
+    // SUV
+    suv: ['SUV', 'Crossover', 'Van'],
+    // 跑车
+    coupe: ['Coupe', 'Supercar', 'Sports Car', 'Cab', 'Roadster'],
+  };
 
-    var W = 1.8, H = 0.55, L = 4.2, wR = 0.3, wT = 0.22;
-    var aF = 1.25, aR = -1.25, wX = W / 2 + 0.07, bY = wR + 0.15;
-
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(W, H, L), paint)).position.y = bY + H / 2;
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.25, L), paint)).position.y = bY + H + 0.12;
-
-    var cW = W - 0.3, cH = 0.38, cL = 1.5, cZ = -0.15;
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(cW, cH, cL), glass)).position.set(0, bY + H + 0.28, cZ);
-    var fg = new THREE.Mesh(new THREE.BoxGeometry(cW - 0.05, cH - 0.02, 0.04), glass);
-    fg.position.set(0, bY + H + 0.28, cZ + cL / 2); fg.rotation.x = -0.55; group.add(fg);
-    var rg = new THREE.Mesh(new THREE.BoxGeometry(cW - 0.05, cH - 0.02, 0.04), glass);
-    rg.position.set(0, bY + H + 0.28, cZ - cL / 2); rg.rotation.x = 0.55; group.add(rg);
-
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.06, 0.8), paint)).position.set(0, bY + H + 0.03, L / 2 - 0.4);
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.06, 0.55), paint)).position.set(0, bY + H + 0.03, -L / 2 + 0.3);
-
-    var grille = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.05), chrome);
-    grille.position.set(0, bY + 0.35, L / 2 + 0.02); group.add(grille);
-    for (var i = -2; i <= 2; i++) {
-      group.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.15, 0.07), chrome)).position.set(i * 0.1, bY + 0.35, L / 2 + 0.03);
+  function detectBodyType(className) {
+    if (!className) return 'sedan';
+    var lower = className.toLowerCase();
+    if (lower.includes('suv') || lower.includes('crossover') || lower.includes('van') || lower.includes('wagon')) return 'suv';
+    if (lower.includes('coupe') || lower.includes('convertible') || lower.includes('cab') || lower.includes('roadster') || lower.includes('supercar')) return 'coupe';
+    // Check TYPE_MAP
+    for (var type in TYPE_MAP) {
+      for (var i = 0; i < TYPE_MAP[type].length; i++) {
+        if (className.indexOf(TYPE_MAP[type][i]) !== -1) return type;
+      }
     }
+    return 'sedan'; // 默认轿车
+  }
 
-    for (var s = 0; s < 2; s++) {
-      var side = s === 0 ? -1 : 1;
-      group.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.06), lightM)).position.set(side * (W / 2 - 0.1), bY + 0.38, L / 2 - 0.02);
-      group.add(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.06), tailM)).position.set(side * (W / 2 - 0.1), bY + 0.38, -L / 2 + 0.02);
-      group.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.1), paint)).position.set(side * (W / 2 + 0.04), bY + H + 0.2, cZ + cL / 2 - 0.1);
-    }
+  function selectModelFile(className) {
+    return 'models/' + detectBodyType(className) + '.glb';
+  }
 
-    var bf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.07, 0.12), plastic);
-    bf.position.set(0, bY - 0.1, L / 2 + 0.01); group.add(bf);
-    var br = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.07, 0.12), plastic);
-    br.position.set(0, bY - 0.1, -L / 2 - 0.01); group.add(br);
+  function loadCarModel(group, modelPath) {
+    var loader = new GLTFLoader();
+    loader.load(modelPath, function (gltf) {
+      var model = gltf.scene;
+      // 标准化比例和位置
+      var box = new THREE.Box3().setFromObject(model);
+      var size = box.getSize(new THREE.Vector3());
+      var maxDim = Math.max(size.x, size.y, size.z);
+      var scale = 3.0 / maxDim;
+      model.scale.set(scale, scale, scale);
 
-    [aF, aR].forEach(function (zPos) {
-      [-wX, wX].forEach(function (xPos) {
-        var wg = new THREE.Group();
-        var t = new THREE.Mesh(new THREE.CylinderGeometry(wR, wR, wT, 24), tireM);
-        t.rotation.z = Math.PI / 2; wg.add(t);
-        var r = new THREE.Mesh(new THREE.CylinderGeometry(wR * 0.65, wR * 0.65, wT + 0.02, 16), rimM);
-        r.rotation.z = Math.PI / 2; wg.add(r);
-        for (var i = 0; i < 5; i++) {
-          var a = (i / 5) * Math.PI * 2;
-          var sp = new THREE.Mesh(new THREE.BoxGeometry(0.02, wR * 0.55, wT * 0.85), rimM);
-          sp.position.set(Math.cos(a) * wR * 0.28, Math.sin(a) * wR * 0.28, 0); wg.add(sp);
+      // 居中并落地
+      box.setFromObject(model);
+      var center = box.getCenter(new THREE.Vector3());
+      model.position.set(-center.x, -box.min.y, -center.z);
+
+      // 确保朝向正确（车头朝 +Z）
+      model.traverse(function (child) {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
         }
-        var cap = new THREE.Mesh(new THREE.CylinderGeometry(wR * 0.2, wR * 0.2, wT + 0.03, 12), chrome);
-        cap.rotation.z = Math.PI / 2; wg.add(cap);
-        wg.position.set(xPos, wR, zPos); group.add(wg);
       });
-    });
 
-    [aF, aR].forEach(function (zPos) {
-      [-wX, wX].forEach(function (xPos) {
-        var arch = new THREE.Mesh(new THREE.TorusGeometry(wR + 0.04, 0.025, 6, 16, Math.PI), plastic);
-        arch.position.set(xPos, bY + 0.06, zPos);
-        arch.rotation.set(0, zPos > 0 ? -Math.PI / 2 : Math.PI / 2, 0); group.add(arch);
-      });
+      // 清空旧模型加入新模型
+      while (group.children.length > 0) group.remove(group.children[0]);
+      group.add(model);
+    }, undefined, function () {
+      // 加载失败，什么也不做
     });
+  }
 
-    group.add(new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.04, L - 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }))).position.y = bY - H / 2 + 0.02;
+  function loadDefaultModel(group) {
+    // 先尝试 sedan
+    loadCarModel(group, 'models/sedan.glb');
   }
 
   function updateCarColor(report) {
-    var map = { '奔驰': 0xc0c0c0, '宝马': 0x3b5998, '奥迪': 0x333333, '大众': 0x4a90d9, '丰田': 0xcc0000, '本田': 0x0066cc, '日产': 0xee4400, '比亚迪': 0x00aa66, '特斯拉': 0xcc0000, '蔚来': 0x0077cc, '理想': 0x00aa88, '保时捷': 0xffcc00 };
-    for (var brand in map) {
-      if (report.indexOf(brand) !== -1) {
-        setTimeout(function () {
-          if (!carGroup) return;
-          carGroup.traverse(function (ch) {
-            if (ch.isMesh && ch.material.color && ch.material.color.getHex() === 0xc0c8e0) {
-              ch.material.color.set(map[brand]);
-            }
-          });
-        }, 300);
-        break;
-      }
+    if (!carGroup) return;
+    // 从报告中提取车型名称
+    var className = '';
+    var match = report.match(/\*\*车型\*\*[：:]\s*(.+)/);
+    if (match) className = match[1];
+    else {
+      match = report.match(/车型[：:]\s*(.+)/);
+      if (match) className = match[1];
+    }
+    if (className) {
+      var modelPath = selectModelFile(className);
+      loadCarModel(carGroup, modelPath);
     }
   }
 
