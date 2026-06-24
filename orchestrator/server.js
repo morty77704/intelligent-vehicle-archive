@@ -4,8 +4,11 @@
 
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const { AGENT_URLS, ALL_TOOLS, TOOL_ROUTES } = require('./tools-registry');
+
+const DB_PATH = 'archive.db';
 
 const app = express();
 app.use(cors());
@@ -13,18 +16,53 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static('../frontend'));
 
 // ── 数据库初始化 ──────────────────────────────────────────
-const db = new Database('archive.db');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS archives (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime')),
-    image_path TEXT,
-    vehicle_info TEXT,
-    plate_info TEXT,
-    condition_info TEXT,
-    full_report TEXT
-  )
-`);
+let db;
+
+async function initDB() {
+  const SQL = await initSqlJs();
+  if (fs.existsSync(DB_PATH)) {
+    const buf = fs.readFileSync(DB_PATH);
+    db = new SQL.Database(buf);
+  } else {
+    db = new SQL.Database();
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS archives (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      image_path TEXT,
+      vehicle_info TEXT,
+      plate_info TEXT,
+      condition_info TEXT,
+      full_report TEXT
+    )
+  `);
+  saveDB();
+}
+
+function saveDB() {
+  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+}
+
+function dbAll(sql, params = []) {
+  const stmt = db.prepare(sql);
+  if (params.length > 0) stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
+function dbGet(sql, params = []) {
+  const rows = dbAll(sql, params);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+function dbRun(sql, params = []) {
+  db.run(sql, params);
+  saveDB();
+}
+
 
 // ── DeepSeek API 配置 ─────────────────────────────────────
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
@@ -167,7 +205,7 @@ app.post('/api/analyze', async (req, res) => {
 
     // 保存档案
     if (report) {
-      db.prepare('INSERT INTO archives (image_path, full_report) VALUES (?, ?)').run('', report);
+      dbRun('INSERT INTO archives (image_path, full_report) VALUES (?, ?)', ['', report]);
     }
 
     res.write(`data: ${JSON.stringify({ type: 'report', content: report })}\n\n`);
@@ -182,23 +220,25 @@ app.post('/api/analyze', async (req, res) => {
 
 // ── 档案查询 ──────────────────────────────────────────────
 app.get('/api/archive', (req, res) => {
-  const rows = db.prepare('SELECT id, created_at, substr(full_report, 1, 200) as preview FROM archives ORDER BY id DESC').all();
+  const rows = dbAll('SELECT id, created_at, substr(full_report, 1, 200) as preview FROM archives ORDER BY id DESC');
   res.json({ status: 'ok', data: rows });
 });
 
 app.get('/api/archive/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM archives WHERE id = ?').get(req.params.id);
+  const row = dbGet('SELECT * FROM archives WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: { code: 'NOT_FOUND', message: '档案不存在' } });
   res.json({ status: 'ok', data: row });
 });
 
 app.delete('/api/archive/:id', (req, res) => {
-  db.prepare('DELETE FROM archives WHERE id = ?').run(req.params.id);
+  dbRun('DELETE FROM archives WHERE id = ?', [req.params.id]);
   res.json({ status: 'ok' });
 });
 
 // ── 启动 ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`🚗 Orchestrator 启动: http://localhost:${PORT}`);
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚗 Orchestrator 启动: http://localhost:${PORT}`);
+  });
 });
