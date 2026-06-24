@@ -1,120 +1,324 @@
 /* ============================================================
-   智能车辆档案系统 — GSAP + Three.js + SSE
+   智能车辆档案助手 — 对话式 + 3D + GSAP
    ============================================================ */
 
-// ── DOM 引用 ──────────────────────────────────────────────
-const $uploadSection   = document.getElementById('uploadSection');
-const $uploadArea      = document.getElementById('uploadArea');
-const $fileInput       = document.getElementById('fileInput');
-const $placeholder     = document.getElementById('placeholder');
-const $preview         = document.getElementById('preview');
-const $uploadActions   = document.getElementById('uploadActions');
-const $btnRetake       = document.getElementById('btnRetake');
-const $btnAnalyze      = document.getElementById('btnAnalyze');
-const $btnNew          = document.getElementById('btnNew');
-const $progressSection = document.getElementById('progressSection');
-const $progressFill    = document.getElementById('progressFill');
-const $progressSteps   = document.getElementById('progressSteps');
-const $resultLayout    = document.getElementById('resultLayout');
-const $resultActions   = document.getElementById('resultActions');
-const $reportContent   = document.getElementById('reportContent');
-const $viewerPlaceholder = document.getElementById('viewerPlaceholder');
+// ── DOM ──────────────────────────────────────────────────
+const $sidebar      = document.getElementById('sidebar');
+const $convList     = document.getElementById('conversationList');
+const $btnNewChat   = document.getElementById('btnNewChat');
+const $chatMessages = document.getElementById('chatMessages');
+const $chatInput    = document.getElementById('chatInput');
+const $btnSend      = document.getElementById('btnSend');
+const $btnAttach    = document.getElementById('btnAttach');
+const $btnRemoveImg = document.getElementById('btnRemoveImage');
+const $btnClearChat = document.getElementById('btnClearChat');
+const $btnToggle3D  = document.getElementById('btnToggle3D');
+const $fileInput    = document.getElementById('fileInput');
+const $imageChip    = document.getElementById('imageChip');
+const $imagePreview = document.getElementById('imagePreview');
+const $imageName    = document.getElementById('imageName');
+const $viewerPanel  = document.getElementById('viewerPanel');
 const $viewerContainer = document.getElementById('viewerContainer');
-const $historyList     = document.getElementById('historyList');
-const $historyCount    = document.getElementById('historyCount');
-const $modalOverlay    = document.getElementById('modalOverlay');
-const $modalContent    = document.getElementById('modalContent');
-const $btnModalClose   = document.getElementById('btnModalClose');
-const $btnModalDelete  = document.getElementById('btnModalDelete');
-const $particleCanvas  = document.getElementById('particleCanvas');
-const $scanLine        = document.getElementById('scanLine');
+const $viewerPH     = document.getElementById('viewerPlaceholder');
 
-let currentImageBase64 = '';
-let currentModalId = null;
+const STORAGE_KEY = 'vehicle-chat-v2';
 
-// ── GSAP 工具 ─────────────────────────────────────────────
-const anim = {
-  fadeIn(el, opts = {}) {
-    return gsap.fromTo(el, { opacity: 0, y: opts.y ?? 16 }, { opacity: 1, y: 0, duration: opts.dur ?? 0.4, ease: 'power2.out', delay: opts.delay ?? 0 });
-  },
-  fadeOut(el, dur = 0.2) {
-    return gsap.to(el, { opacity: 0, duration: dur, ease: 'power2.in' });
-  }
+// ── 状态 ────────────────────────────────────────────────
+const state = {
+  messages: [],
+  conversations: [],
+  activeId: '',
+  imageFile: null,
+  imageBase64: '',
+  imageUrl: '',
+  sending: false,
 };
 
-// ── 页面入场 ──────────────────────────────────────────────
-function pageEntrance() {
-  const tl = gsap.timeline();
-  tl.from('.header', { y: -20, opacity: 0, duration: 0.45, ease: 'power3.out' })
-    .from('.upload-section', { y: 24, opacity: 0, duration: 0.45, ease: 'power2.out' }, '-=0.2')
-    .from('.history-section', { y: 20, opacity: 0, duration: 0.4, ease: 'power2.out' }, '-=0.15');
+// ── 工具函数 ────────────────────────────────────────────
+function now() { return new Date().toLocaleString('zh-CN', { hour12: false }); }
+function uid() { return `${Date.now()}-${Math.random().toString(16).slice(2,10)}`; }
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── 粒子系统 ──────────────────────────────────────────────
-let particleCtx, particles = [], particleAnimId;
+function renderMD(content) {
+  if (!content) return '';
+  if (typeof marked !== 'undefined') return marked.parse(content);
+  return '<pre style="white-space:pre-wrap;font-family:inherit">' + esc(content) + '</pre>';
+}
 
-function initParticles() {
-  const canvas = $particleCanvas;
-  if (!canvas) return;
-  canvas.width = $uploadArea.offsetWidth;
-  canvas.height = $uploadArea.offsetHeight;
-  particleCtx = canvas.getContext('2d');
-  particles = [];
-  for (let i = 0; i < 35; i++) {
-    particles.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.8 + 0.5,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      alpha: Math.random() * 0.4 + 0.1
-    });
+function msgText(msg) {
+  if (typeof msg.content === 'string') return msg.content;
+  if (Array.isArray(msg.content)) return msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+  return '';
+}
+
+function msgImage(msg) {
+  if (!Array.isArray(msg.content)) return '';
+  const img = msg.content.find(c => c.type === 'image_url');
+  return img ? img.image_url.url : '';
+}
+
+function convTitle(msgs) {
+  const u = msgs.find(m => m.role === 'user');
+  if (!u) return '新对话';
+  const t = msgText(u).trim();
+  return t ? t.slice(0, 24) : '车辆图片分析';
+}
+
+function convPreview(msgs) {
+  const a = [...msgs].reverse().find(m => m.role === 'assistant');
+  if (!a) return '';
+  return msgText(a).replace(/[#*`\n]/g,' ').slice(0, 40);
+}
+
+// ── 对话持久化 ──────────────────────────────────────────
+function loadConvs() {
+  try { state.conversations = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (_) { state.conversations = []; }
+}
+function saveConvs() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
+}
+
+function upsertConv() {
+  if (!state.messages.length) return;
+  if (!state.activeId) state.activeId = uid();
+  const ts = now();
+  const ex = state.conversations.find(c => c.id === state.activeId);
+  const payload = { id: state.activeId, title: convTitle(state.messages), updatedAt: ts, messages: state.messages };
+  if (ex) Object.assign(ex, payload);
+  else state.conversations.unshift({ ...payload, createdAt: ts });
+  state.conversations.sort((a,b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  saveConvs();
+  renderConvList();
+}
+
+function renderConvList() {
+  if (!state.conversations.length) {
+    $convList.innerHTML = '<p class="empty-hint">暂无历史对话</p>';
+    return;
   }
-  drawParticles();
+  $convList.innerHTML = state.conversations.map(c => {
+    const cls = c.id === state.activeId ? ' active' : '';
+    return `<button class="conversation-item${cls}" data-id="${c.id}">
+      <span class="conversation-title">${esc(c.title || '未命名对话')}</span>
+      <span class="conversation-preview">${esc(convPreview(c.messages))}</span>
+      <span class="conversation-time">${esc(c.updatedAt || '')}</span>
+    </button>`;
+  }).join('');
+  $convList.querySelectorAll('.conversation-item').forEach(el => {
+    el.addEventListener('click', () => openConv(el.dataset.id));
+  });
 }
 
-function drawParticles() {
-  if (!particleCtx) return;
-  const ctx = particleCtx;
-  const w = ctx.canvas.width, h = ctx.canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  particles.forEach(p => {
-    p.x += p.vx; p.y += p.vy;
-    if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
-    if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(129,140,248,${p.alpha})`;
-    ctx.fill();
-  });
-  // 连线
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      if (dx * dx + dy * dy < 5000) {
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.strokeStyle = `rgba(129,140,248,0.06)`;
-        ctx.stroke();
+function openConv(id) {
+  const c = state.conversations.find(c => c.id === id);
+  if (!c) return;
+  // 保存当前对话
+  if (state.activeId && state.messages.length) upsertConv();
+  state.activeId = c.id;
+  state.messages = c.messages || [];
+  state.imageFile = null; state.imageBase64 = ''; state.imageUrl = '';
+  $imageChip.hidden = true;
+  renderMessages();
+  renderConvList();
+}
+
+function newChat() {
+  if (state.messages.length) upsertConv();
+  state.activeId = uid();
+  state.messages = [];
+  state.imageFile = null; state.imageBase64 = ''; state.imageUrl = '';
+  $imageChip.hidden = true;
+  $chatMessages.innerHTML = '';
+  $viewerPanel.style.display = 'none';
+  $chatInput.focus();
+  renderConvList();
+}
+
+// ── 消息渲染 ────────────────────────────────────────────
+function renderMessages() {
+  $chatMessages.innerHTML = state.messages.map(m => {
+    const text = msgText(m);
+    const img = msgImage(m);
+    const cls = m.role === 'user' ? 'user' : 'assistant';
+    const avatar = m.role === 'user' ? 'U' : 'AI';
+    let body = '';
+    if (img) body += `<img class="msg-image" src="${esc(img)}" alt="车辆图片">`;
+    if (text) body += (m.role === 'assistant' ? renderMD(text) : esc(text));
+    if (m.tools && m.tools.length) {
+      body += m.tools.map(t => `<div class="msg-tool"><span class="tool-dot"></span>${t}</div>`).join('');
+    }
+    if (m.loading) body += '<div class="msg-loading"><span></span><span></span><span></span></div>';
+    return `<div class="message ${cls}"><div class="msg-avatar">${avatar}</div><div class="msg-content">${body}</div></div>`;
+  }).join('');
+  $chatMessages.scrollTop = $chatMessages.scrollHeight;
+}
+
+function botMsg(content, tools) {
+  return { role: 'assistant', content, tools, ts: now() };
+}
+function userMsg(content, imageUrl) {
+  const parts = [{ type: 'text', text: content }];
+  if (imageUrl) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
+  return { role: 'user', content: parts, ts: now() };
+}
+
+function pushUser(text, imgUrl) {
+  state.messages.push(userMsg(text, imgUrl));
+  state.messages.push({ role: 'assistant', content: '', loading: true, ts: now() });
+  renderMessages();
+}
+
+function finishBot(text, tools) {
+  // 替换 loading 消息
+  state.messages = state.messages.filter(m => !m.loading);
+  state.messages.push(botMsg(text, tools));
+  renderMessages();
+  upsertConv();
+  // 如果有报告内容，显示 3D 面板
+  if (text && text.length > 100) {
+    showViewer();
+    updateCarColorFromReport(text);
+  }
+}
+
+function addToolStep(toolName) {
+  const TOOLS_LABEL = {
+    recognize_vehicle:'识别车型', detect_plate:'识别车牌', assess_condition:'检测车况',
+    query_vehicle_params:'查询参数', estimate_market_price:'市场估价',
+    query_plate_info:'车牌信息', check_violation:'违章查询', query_vehicle_history:'维保记录',
+    diagnose_damage:'损伤诊断', estimate_repair:'维修方案', recommend_insurance:'保险建议',
+  };
+  const label = TOOLS_LABEL[toolName] || toolName;
+  // 更新 loading 消息的 tools 列表
+  const loading = state.messages.find(m => m.loading);
+  if (loading) {
+    if (!loading.tools) loading.tools = [];
+    loading.tools.push(label);
+    renderMessages();
+  }
+}
+
+// ── 图片上传 ────────────────────────────────────────────
+$btnAttach.addEventListener('click', () => $fileInput.click());
+$fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file || !file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
+  state.imageFile = file;
+  state.imageName.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    state.imageUrl = ev.target.result;
+    state.imageBase64 = ev.target.result.split(',')[1];
+    $imagePreview.src = ev.target.result;
+    $imageChip.hidden = false;
+    gsap.from($imageChip, { y: -8, opacity: 0, duration: 0.25 });
+    $chatInput.focus();
+  };
+  reader.readAsDataURL(file);
+});
+
+$btnRemoveImg.addEventListener('click', () => {
+  state.imageFile = null; state.imageBase64 = ''; state.imageUrl = '';
+  $imageChip.hidden = true; $fileInput.value = '';
+});
+
+$btnClearChat.addEventListener('click', () => {
+  if (!state.messages.length || !confirm('确定清空当前对话？')) return;
+  state.messages = [];
+  renderMessages();
+  $viewerPanel.style.display = 'none';
+  upsertConv();
+});
+
+$btnNewChat.addEventListener('click', newChat);
+
+// ── 发送消息 ────────────────────────────────────────────
+$btnSend.addEventListener('click', send);
+$chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+async function send() {
+  const text = $chatInput.value.trim();
+  if (!text && !state.imageBase64) return;
+  if (state.sending) return;
+
+  state.sending = true;
+  $btnSend.disabled = true;
+
+  const imgUrl = state.imageUrl;
+  const imgB64 = state.imageBase64;
+  pushUser(text || '请分析这辆车', imgUrl);
+
+  // 清除输入
+  $chatInput.value = '';
+  $chatInput.style.height = 'auto';
+  if (state.imageBase64) {
+    state.imageFile = null; state.imageBase64 = ''; state.imageUrl = '';
+    $imageChip.hidden = true; $fileInput.value = '';
+  }
+
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imgB64, query: text || '帮我识别这辆车' }),
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', report = '';
+    const tools = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim().startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.trim().slice(6));
+          if (data.type === 'step' && data.tool) addToolStep(data.tool);
+          if (data.type === 'report') report = data.content || '';
+          if (data.type === 'error') report = '分析失败：' + (data.message || '未知错误');
+        } catch (_) {}
       }
     }
+    finishBot(report || '分析完成', tools);
+  } catch (e) {
+    finishBot('请求失败：' + e.message, []);
+  } finally {
+    state.sending = false;
+    $btnSend.disabled = false;
+    $chatInput.focus();
   }
-  particleAnimId = requestAnimationFrame(drawParticles);
 }
 
-// ── 3D 查看器 ────────────────────────────────────────────
-let scene, camera, renderer, carGroup, viewerActive = false;
+// ── 3D 查看器 ───────────────────────────────────────────
+let scene, camera, renderer, carGroup, viewerReady = false;
+
+function showViewer() {
+  $viewerPanel.style.display = 'block';
+  if (!viewerReady) initViewer();
+}
+
+$btnToggle3D.addEventListener('click', () => {
+  if ($viewerPanel.style.display === 'none') showViewer();
+  else $viewerPanel.style.display = 'none';
+});
 
 function initViewer() {
-  if (viewerActive) return;
-  viewerActive = true;
-
-  const container = $viewerContainer;
-  const w = container.clientWidth, h = container.clientHeight;
+  viewerReady = true;
+  const w = $viewerContainer.clientWidth || 600;
+  const h = $viewerContainer.clientHeight || 240;
 
   scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0F1117);
+  scene.fog = new THREE.Fog(0x0F1117, 5, 14);
 
   camera = new THREE.PerspectiveCamera(38, w / h, 0.5, 50);
   camera.position.set(4.5, 2.4, 5.5);
@@ -128,529 +332,195 @@ function initViewer() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.3;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  container.appendChild(renderer.domElement);
+  $viewerContainer.innerHTML = '';
+  $viewerContainer.appendChild(renderer.domElement);
 
-  // 渐变背景
-  scene.background = new THREE.Color(0x0F1117);
-  scene.fog = new THREE.Fog(0x0F1117, 6, 16);
-
-  // 多光源
-  const ambient = new THREE.AmbientLight(0x334466, 1.8);
-  scene.add(ambient);
-
+  // 灯光
+  scene.add(new THREE.AmbientLight(0x334466, 1.8));
   const key = new THREE.DirectionalLight(0xfff5ee, 4.5);
-  key.position.set(5, 6, 3);
-  key.castShadow = true;
+  key.position.set(5, 6, 3); key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 20;
-  key.shadow.camera.left = -4; key.shadow.camera.right = 4;
-  key.shadow.camera.top = 4; key.shadow.camera.bottom = -4;
-  key.shadow.bias = -0.0001;
-  key.shadow.normalBias = 0.02;
   scene.add(key);
+  scene.add(new THREE.DirectionalLight(0x8899cc, 2.2)).position.set(-3, 2, -2);
+  scene.add(new THREE.DirectionalLight(0x818cf8, 2.5)).position.set(0, 1.5, -4);
+  scene.add(new THREE.DirectionalLight(0x445577, 1.5)).position.set(0, -0.5, 1);
 
-  const fill = new THREE.DirectionalLight(0x8899cc, 2.2);
-  fill.position.set(-3, 2, -2);
-  scene.add(fill);
-
-  const rim = new THREE.DirectionalLight(0x818cf8, 2.5);
-  rim.position.set(0, 1.5, -4);
-  scene.add(rim);
-
-  const under = new THREE.DirectionalLight(0x445577, 1.5);
-  under.position.set(0, -0.5, 1);
-  scene.add(under);
-
-  // 地面（暗色镜面）
-  const groundGeo = new THREE.PlaneGeometry(14, 14);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x181b28, roughness: 0.45, metalness: 0.2 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.25;
-  ground.receiveShadow = true;
+  // 地面
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 14),
+    new THREE.MeshStandardMaterial({ color: 0x181b28, roughness: 0.45, metalness: 0.2 })
+  );
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -1.25; ground.receiveShadow = true;
   scene.add(ground);
 
-  // 环形灯台
-  const ringGeo = new THREE.TorusGeometry(2.2, 0.02, 8, 64);
-  const ringMat = new THREE.MeshStandardMaterial({ color: 0x6366f1, roughness: 0.2, emissive: 0x6366f1, emissiveIntensity: 0.6 });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = -1.21;
+  // 环形灯
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(2.2, 0.02, 8, 64),
+    new THREE.MeshStandardMaterial({ color: 0x6366f1, roughness: 0.2, emissive: 0x6366f1, emissiveIntensity: 0.6 })
+  );
+  ring.rotation.x = -Math.PI / 2; ring.position.y = -1.21;
   scene.add(ring);
 
-  // 车辆组
   carGroup = new THREE.Group();
   buildCar(carGroup);
+  carGroup.rotation.y = 0.3;
   scene.add(carGroup);
 
-  $viewerPlaceholder.style.display = 'none';
-  animateViewer();
-
-  // 鼠标交互
-  let isDragging = false, prevX = 0;
-  renderer.domElement.addEventListener('mousedown', (e) => { isDragging = true; prevX = e.clientX; });
-  renderer.domElement.addEventListener('touchstart', (e) => { isDragging = true; prevX = e.touches[0].clientX; });
-  window.addEventListener('mouseup', () => isDragging = false);
-  window.addEventListener('touchend', () => isDragging = false);
-  window.addEventListener('mousemove', (e) => {
-    if (!isDragging || !carGroup) return;
-    const dx = e.clientX - prevX;
-    carGroup.rotation.y += dx * 0.01;
+  // 拖拽旋转
+  let dragging = false, prevX = 0;
+  renderer.domElement.addEventListener('mousedown', e => { dragging = true; prevX = e.clientX; });
+  renderer.domElement.addEventListener('touchstart', e => { dragging = true; prevX = e.touches[0].clientX; });
+  window.addEventListener('mouseup', () => dragging = false);
+  window.addEventListener('touchend', () => dragging = false);
+  window.addEventListener('mousemove', e => {
+    if (!dragging || !carGroup) return;
+    carGroup.rotation.y += (e.clientX - prevX) * 0.01;
     prevX = e.clientX;
   });
-  window.addEventListener('touchmove', (e) => {
-    if (!isDragging || !carGroup) return;
-    const dx = e.touches[0].clientX - prevX;
-    carGroup.rotation.y += dx * 0.01;
+  window.addEventListener('touchmove', e => {
+    if (!dragging || !carGroup) return;
+    carGroup.rotation.y += (e.touches[0].clientX - prevX) * 0.01;
     prevX = e.touches[0].clientX;
   });
 
-  // 自动旋转
-  carGroup.rotation.y = 0.3;
+  animateViewer();
 }
 
 function buildCar(group) {
-  // 坐标约定：X=宽度, Y=高度, Z=前后(前=+Z)
-  const paintMat = new THREE.MeshStandardMaterial({ color: 0xc0c8e0, roughness: 0.18, metalness: 0.8 });
-  const darkPlastic = new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.55, metalness: 0.1 });
-  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.1, metalness: 0.95 });
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x111122, roughness: 0.03, metalness: 0.05, clearcoat: 0.5, opacity: 0.5, transparent: true });
-  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, emissive: 0xffffff, emissiveIntensity: 1.2 });
-  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1111, roughness: 0.05, emissive: 0x440000, emissiveIntensity: 1 });
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.05, metalness: 0.95 });
+  const paint = new THREE.MeshStandardMaterial({ color: 0xc0c8e0, roughness: 0.18, metalness: 0.8 });
+  const plastic = new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.55, metalness: 0.1 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.1, metalness: 0.95 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x111122, roughness: 0.03, metalness: 0.05, clearcoat: 0.5, opacity: 0.5, transparent: true });
+  const light = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, emissive: 0xffffff, emissiveIntensity: 1.2 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0xff1111, roughness: 0.05, emissive: 0x440000, emissiveIntensity: 1 });
+  const tire = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+  const rim = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.05, metalness: 0.95 });
 
-  const W = 1.8,  H_body = 0.55, L = 4.2;           // 车身：宽, 高, 长
-  const cabinH = 0.38, cabinL = 1.5;                  // 驾驶舱
-  const wheelR = 0.3, wheelT = 0.22;                  // 车轮半径/厚度
-  const axleF = 1.25, axleR = -1.25;                  // 前后轴 Z 位置
-  const wheelX = (W / 2) + 0.07;                       // 车轮 X 位置
-  const bodyY = wheelR + 0.15;                         // 车身底部 Y
+  const W = 1.8, H = 0.55, L = 4.2, wheelR = 0.3, wheelT = 0.22;
+  const axleF = 1.25, axleR = -1.25, wheelX = W / 2 + 0.07, bodyY = wheelR + 0.15;
 
-  // ── 车身下部 ──────────────────────────────────────
-  const lower = new THREE.Mesh(new THREE.BoxGeometry(W, H_body, L), paintMat);
-  lower.position.y = bodyY + H_body / 2;
-  lower.castShadow = true; lower.receiveShadow = true;
+  // 车身
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(W, H, L), paint);
+  lower.position.y = bodyY + H / 2; lower.castShadow = true; lower.receiveShadow = true;
   group.add(lower);
-
-  // ── 车身腰线上方逐渐收窄（侧面内缩片） ────────────
-  const upperW = W - 0.15;
-  const upper = new THREE.Mesh(new THREE.BoxGeometry(upperW, 0.25, L), paintMat);
-  upper.position.y = bodyY + H_body + 0.12;
-  upper.castShadow = true;
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.25, L), paint);
+  upper.position.y = bodyY + H + 0.12; upper.castShadow = true;
   group.add(upper);
 
-  // ── 驾驶舱 ────────────────────────────────────────
-  const cabinW = W - 0.3;
-  const cabinZ = -0.15;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinW, cabinH, cabinL), glassMat);
-  cabin.position.set(0, bodyY + H_body + 0.28, cabinZ);
-  cabin.castShadow = true;
-  cabin.renderOrder = 1;
+  // 驾驶舱 + 玻璃
+  const cabinW = W - 0.3, cabinH = 0.38, cabinL = 1.5, cabinZ = -0.15;
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinW, cabinH, cabinL), glass);
+  cabin.position.set(0, bodyY + H + 0.28, cabinZ); cabin.renderOrder = 1;
   group.add(cabin);
-
-  // ── 前挡风（倾斜） ────────────────────────────────
   const fgGeo = new THREE.BoxGeometry(cabinW - 0.05, cabinH - 0.02, 0.04);
-  const fg = new THREE.Mesh(fgGeo, glassMat);
-  fg.position.set(0, bodyY + H_body + 0.28, cabinZ + cabinL / 2);
-  fg.rotation.x = -0.55;
-  fg.renderOrder = 1;
+  const fg = new THREE.Mesh(fgGeo, glass);
+  fg.position.set(0, bodyY + H + 0.28, cabinZ + cabinL / 2); fg.rotation.x = -0.55; fg.renderOrder = 1;
   group.add(fg);
-
-  // ── 后挡风（倾斜） ────────────────────────────────
-  const rg = new THREE.Mesh(fgGeo.clone(), glassMat);
-  rg.position.set(0, bodyY + H_body + 0.28, cabinZ - cabinL / 2);
-  rg.rotation.x = 0.55;
-  rg.renderOrder = 1;
+  const rg = new THREE.Mesh(fgGeo.clone(), glass);
+  rg.position.set(0, bodyY + H + 0.28, cabinZ - cabinL / 2); rg.rotation.x = 0.55; rg.renderOrder = 1;
   group.add(rg);
 
-  // ── 引擎盖 ────────────────────────────────────────
-  const hoodGeo = new THREE.BoxGeometry(W - 0.1, 0.06, 0.8);
-  const hood = new THREE.Mesh(hoodGeo, paintMat);
-  hood.position.set(0, bodyY + H_body + 0.03, L / 2 - 0.4);
-  hood.castShadow = true;
+  // 引擎盖 + 后备箱
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.06, 0.8), paint);
+  hood.position.set(0, bodyY + H + 0.03, L / 2 - 0.4); hood.castShadow = true;
   group.add(hood);
-
-  // ── 后备箱盖 ──────────────────────────────────────
-  const trunkGeo = new THREE.BoxGeometry(W - 0.1, 0.06, 0.55);
-  const trunk = new THREE.Mesh(trunkGeo, paintMat);
-  trunk.position.set(0, bodyY + H_body + 0.03, -L / 2 + 0.3);
-  trunk.castShadow = true;
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.06, 0.55), paint);
+  trunk.position.set(0, bodyY + H + 0.03, -L / 2 + 0.3); trunk.castShadow = true;
   group.add(trunk);
 
-  // ── 前脸进气格栅 ──────────────────────────────────
-  const grilleW = 0.5, grilleH = 0.18;
-  const grilleFrame = new THREE.Mesh(new THREE.BoxGeometry(grilleW, grilleH, 0.05), chromeMat);
-  grilleFrame.position.set(0, bodyY + 0.35, L / 2 + 0.02);
-  group.add(grilleFrame);
-  // 竖条
+  // 格栅
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.05), chrome);
+  grille.position.set(0, bodyY + 0.35, L / 2 + 0.02); group.add(grille);
   for (let i = -2; i <= 2; i++) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.025, grilleH - 0.03, 0.07), chromeMat);
-    bar.position.set(i * 0.1, bodyY + 0.35, L / 2 + 0.03);
-    group.add(bar);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.15, 0.07), chrome);
+    bar.position.set(i * 0.1, bodyY + 0.35, L / 2 + 0.03); group.add(bar);
   }
 
-  // ── 前大灯 ────────────────────────────────────────
-  for (let side of [-1, 1]) {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.06), lightMat);
-    hl.position.set(side * (W / 2 - 0.1), bodyY + 0.38, L / 2 - 0.02);
-    group.add(hl);
+  // 大灯 + 尾灯 + 后视镜
+  for (const side of [-1, 1]) {
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.06), light)).position.set(side * (W / 2 - 0.1), bodyY + 0.38, L / 2 - 0.02);
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.06), tail)).position.set(side * (W / 2 - 0.1), bodyY + 0.38, -L / 2 + 0.02);
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.1), paint)).position.set(side * (W / 2 + 0.04), bodyY + H + 0.2, cabinZ + cabinL / 2 - 0.1);
   }
 
-  // ── 尾灯 ──────────────────────────────────────────
-  for (let side of [-1, 1]) {
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.06), tailMat);
-    tl.position.set(side * (W / 2 - 0.1), bodyY + 0.38, -L / 2 + 0.02);
-    group.add(tl);
-  }
+  // 保险杠
+  const bf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.07, 0.12), plastic);
+  bf.position.set(0, bodyY - 0.1, L / 2 + 0.01); group.add(bf);
+  const br = bf.clone(); br.position.z = -L / 2 - 0.01; group.add(br);
 
-  // ── 后视镜 ────────────────────────────────────────
-  for (let side of [-1, 1]) {
-    const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.1), paintMat);
-    mirror.position.set(side * (W / 2 + 0.04), bodyY + H_body + 0.2, cabinZ + cabinL / 2 - 0.1);
-    group.add(mirror);
-  }
-
-  // ── 防撞杠 ────────────────────────────────────────
-  const bf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, 0.07, 0.12), darkPlastic);
-  bf.position.set(0, bodyY - 0.1, L / 2 + 0.01);
-  group.add(bf);
-  const br = bf.clone();
-  br.position.z = -L / 2 - 0.01;
-  group.add(br);
-
-  // ── 车轮 ──────────────────────────────────────────
+  // 车轮
   [axleF, axleR].forEach(zPos => {
     [-wheelX, wheelX].forEach(xPos => {
       const wg = new THREE.Group();
-
-      // 轮胎 (CylinderGeometry 沿 Y 轴, 需旋转到 X 轴)
-      const tireGeo = new THREE.CylinderGeometry(wheelR, wheelR, wheelT, 24);
-      const tire = new THREE.Mesh(tireGeo, tireMat);
-      tire.rotation.z = Math.PI / 2;
-      tire.castShadow = true;
-      wg.add(tire);
-
-      // 轮辋
-      const rimGeo = new THREE.CylinderGeometry(wheelR * 0.65, wheelR * 0.65, wheelT + 0.02, 16);
-      const rim = new THREE.Mesh(rimGeo, rimMat);
-      rim.rotation.z = Math.PI / 2;
-      wg.add(rim);
-
-      // 5辐
+      const tGeo = new THREE.CylinderGeometry(wheelR, wheelR, wheelT, 24);
+      const t = new THREE.Mesh(tGeo, tire); t.rotation.z = Math.PI / 2; t.castShadow = true; wg.add(t);
+      const r = new THREE.Mesh(new THREE.CylinderGeometry(wheelR * 0.65, wheelR * 0.65, wheelT + 0.02, 16), rim);
+      r.rotation.z = Math.PI / 2; wg.add(r);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
-        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.02, wheelR * 0.55, wheelT * 0.85), rimMat);
-        spoke.position.set(Math.cos(a) * wheelR * 0.28, Math.sin(a) * wheelR * 0.28, 0);
-        wg.add(spoke);
+        const s = new THREE.Mesh(new THREE.BoxGeometry(0.02, wheelR * 0.55, wheelT * 0.85), rim);
+        s.position.set(Math.cos(a) * wheelR * 0.28, Math.sin(a) * wheelR * 0.28, 0); wg.add(s);
       }
-
-      // 中心盖
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(wheelR * 0.2, wheelR * 0.2, wheelT + 0.03, 12), chromeMat);
-      cap.rotation.z = Math.PI / 2;
-      wg.add(cap);
-
-      wg.position.set(xPos, wheelR, zPos);
-      group.add(wg);
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(wheelR * 0.2, wheelR * 0.2, wheelT + 0.03, 12), chrome);
+      c.rotation.z = Math.PI / 2; wg.add(c);
+      wg.position.set(xPos, wheelR, zPos); group.add(wg);
     });
   });
 
-  // ── 轮拱 ──────────────────────────────────────────
+  // 轮拱
   [axleF, axleR].forEach(zPos => {
     [-wheelX, wheelX].forEach(xPos => {
-      const archGeo = new THREE.TorusGeometry(wheelR + 0.04, 0.025, 6, 16, Math.PI);
-      const arch = new THREE.Mesh(archGeo, darkPlastic);
-      arch.position.set(xPos, bodyY + 0.06, zPos);
-      arch.rotation.set(0, zPos > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
-      group.add(arch);
+      const a = new THREE.Mesh(new THREE.TorusGeometry(wheelR + 0.04, 0.025, 6, 16, Math.PI), plastic);
+      a.position.set(xPos, bodyY + 0.06, zPos);
+      a.rotation.set(0, zPos > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
+      group.add(a);
     });
   });
 
-  // ── 底部护板 ──────────────────────────────────────
-  const floorGeo = new THREE.BoxGeometry(W - 0.2, 0.04, L - 0.4);
-  const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
-  floor.position.y = bodyY - H_body / 2 + 0.02;
-  group.add(floor);
+  // 底盘
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.04, L - 0.4), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+  floor.position.y = bodyY - H / 2 + 0.02; group.add(floor);
 }
 
-function updateCarColor(hex) {
-  if (!carGroup) return;
-  carGroup.traverse(child => {
-    if (child.isMesh && child.material.color && child.material.color.getHex() === 0xc0c8e0) {
-      child.material.color.set(hex);
+function updateCarColorFromReport(report) {
+  const colorMap = { '奔驰':0xc0c0c0,'宝马':0x3b5998,'奥迪':0x333333,'大众':0x4a90d9,'丰田':0xcc0000,'本田':0x0066cc,'日产':0xee4400,'比亚迪':0x00aa66,'特斯拉':0xcc0000,'蔚来':0x0077cc,'理想':0x00aa88,'保时捷':0xffcc00 };
+  for (const [brand, color] of Object.entries(colorMap)) {
+    if (report.includes(brand)) {
+      setTimeout(() => {
+        if (!carGroup) return;
+        carGroup.traverse(ch => {
+          if (ch.isMesh && ch.material.color && ch.material.color.getHex() === 0xc0c8e0) ch.material.color.set(color);
+        });
+      }, 300);
+      break;
     }
-  });
+  }
 }
 
 function animateViewer() {
-  if (!viewerActive || !renderer) return;
+  if (!viewerReady || !renderer) return;
   requestAnimationFrame(animateViewer);
-  if (carGroup && !carGroup.userData?.dragging) {
-    carGroup.rotation.y += 0.003;
-  }
+  if (carGroup) carGroup.rotation.y += 0.003;
   renderer.render(scene, camera);
 }
 
-function resizeViewer() {
-  if (!renderer || !$viewerContainer) return;
-  const w = $viewerContainer.clientWidth, h = $viewerContainer.clientHeight;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-}
-
-// ── 图片上传 ──────────────────────────────────────────────
-$uploadArea.addEventListener('click', () => $fileInput.click());
-$fileInput.addEventListener('change', (e) => { if (e.target.files[0]) processFile(e.target.files[0]); });
-
-$uploadArea.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  $uploadArea.classList.add('drag-over');
-});
-$uploadArea.addEventListener('dragleave', () => $uploadArea.classList.remove('drag-over'));
-$uploadArea.addEventListener('drop', (e) => {
-  e.preventDefault();
-  $uploadArea.classList.remove('drag-over');
-  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
-});
-
-function processFile(file) {
-  if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    currentImageBase64 = e.target.result.split(',')[1];
-    $preview.src = e.target.result;
-    $preview.style.display = 'block';
-    $placeholder.style.display = 'none';
-    $uploadActions.style.display = 'flex';
-    gsap.from($preview, { scale: 0.9, opacity: 0, duration: 0.35, ease: 'back.out(1.7)' });
-    gsap.from($uploadActions.children, { y: 8, opacity: 0, duration: 0.25, stagger: 0.05 });
-  };
-  reader.readAsDataURL(file);
-}
-
-$btnRetake.addEventListener('click', () => {
-  currentImageBase64 = '';
-  $fileInput.value = '';
-  $preview.style.display = 'none';
-  $placeholder.style.display = '';
-  $uploadActions.style.display = 'none';
-});
-
-// ── 分析流程 ──────────────────────────────────────────────
-$btnAnalyze.addEventListener('click', startAnalysis);
-$btnNew.addEventListener('click', resetAnalysis);
-
-const STEP_LABELS = {
-  recognize_vehicle: '识别车型', detect_plate: '识别车牌', assess_condition: '检测车况',
-  query_vehicle_params: '查询参数', estimate_market_price: '市场估价', report: '生成档案',
-};
-const STEP_ORDER = ['recognize_vehicle','detect_plate','assess_condition','query_vehicle_params','estimate_market_price','report'];
-let completedCount = 0;
-
-function initSteps() {
-  $progressSteps.innerHTML = STEP_ORDER.map(key =>
-    `<div class="step-item" id="step-${key}"><span class="step-dot"></span>${STEP_LABELS[key] || key}</div>`
-  ).join('');
-  $progressFill.style.width = '0%';
-  completedCount = 0;
-}
-
-function markStep(key) {
-  const el = document.getElementById(`step-${key}`);
-  if (!el) return;
-  el.classList.add('done');
-  gsap.from(el.querySelector('.step-dot'), { scale: 2.5, duration: 0.35, ease: 'back.out(2)' });
-}
-
-function advanceProgress(toolName) {
-  completedCount++;
-  markStep(toolName);
-  const ratio = Math.min(completedCount / STEP_ORDER.length, 1);
-  gsap.to($progressFill, { width: `${ratio * 100}%`, duration: 0.4, ease: 'power2.out' });
-  // 激活下一步
-  const nextIdx = STEP_ORDER.indexOf(toolName) + 1;
-  if (nextIdx < STEP_ORDER.length) {
-    const nextEl = document.getElementById(`step-${STEP_ORDER[nextIdx]}`);
-    if (nextEl) nextEl.classList.add('active');
-  }
-}
-
-async function startAnalysis() {
-  if (!currentImageBase64) return;
-
-  // 过渡
-  const tl = gsap.timeline();
-  tl.to([$uploadSection, $resultLayout, $resultActions], { opacity: 0, duration: 0.15 })
-    .set([$uploadSection, $resultLayout, $resultActions], { display: 'none' })
-    .set($progressSection, { display: 'block', opacity: 0 })
-    .to($progressSection, { opacity: 1, duration: 0.25 });
-
-  initSteps();
-  document.getElementById('step-recognize_vehicle').classList.add('active');
-
-  // 3D 查看器
-  $viewerContainer.innerHTML = '';
-  $viewerPlaceholder.style.display = 'flex';
-  viewerActive = false;
-
-  try {
-    const response = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: currentImageBase64, query: '帮我识别这辆车，生成完整的车辆档案' })
-    });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.trim().startsWith('data: ')) continue;
-        try { handleSSE(JSON.parse(line.trim().slice(6))); } catch (_) {}
-      }
-    }
-  } catch (e) {
-    alert('请求失败：' + e.message);
-    resetAnalysis();
-  }
-}
-
-function handleSSE(data) {
-  if (data.type === 'step' && data.tool) {
-    advanceProgress(data.tool);
-  }
-  if (data.type === 'report') {
-    gsap.to($progressFill, { width: '100%', duration: 0.3 });
-    const tl = gsap.timeline();
-    tl.to($progressSection, { opacity: 0, duration: 0.18 })
-      .set($progressSection, { display: 'none' })
-      .set([$resultLayout, $resultActions], { display: 'flex' })
-      .set($resultActions, { display: 'block' })
-      .to([$resultLayout, $resultActions], { opacity: 1, duration: 0.3 });
-
-    const reportText = data.content || '分析完成';
-    if (typeof marked !== 'undefined') {
-      $reportContent.innerHTML = marked.parse(reportText);
-    } else {
-      $reportContent.innerHTML = `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(reportText)}</pre>`;
-    }
-    gsap.from('#reportCard', { y: 16, opacity: 0, duration: 0.4, ease: 'power3.out' });
-    gsap.from('#viewerCard', { y: 16, opacity: 0, duration: 0.4, delay: 0.06, ease: 'power3.out' });
-    gsap.from($btnNew, { y: 6, opacity: 0, duration: 0.25, delay: 0.15 });
-
-    // 启动 3D 查看器 + 根据车型调颜色
-    setTimeout(() => {
-      initViewer();
-      // 尝试从报告中提取车型关键词来调色
-      const report = data.content || '';
-      const colorMap = { '奔驰': 0xc0c0c0, '宝马': 0x3b5998, '奥迪': 0x333333, '大众': 0x4a90d9, '丰田': 0xcc0000, '本田': 0x0066cc, '日产': 0xee4400, '比亚迪': 0x00aa66, '特斯拉': 0xcc0000, '蔚来': 0x0077cc, '理想': 0x00aa88, '保时捷': 0xffcc00 };
-      for (const [brand, color] of Object.entries(colorMap)) {
-        if (report.includes(brand)) { updateCarColor(color); break; }
-      }
-    }, 200);
-
-    loadHistory();
-  }
-  if (data.type === 'error') {
-    alert('分析失败：' + data.message);
-    resetAnalysis();
-  }
-}
-
-function resetAnalysis() {
-  const tl = gsap.timeline();
-  tl.to([$progressSection, $resultLayout, $resultActions], { opacity: 0, duration: 0.15 })
-    .set([$progressSection, $resultLayout, $resultActions], { display: 'none' })
-    .set($uploadSection, { display: 'block', opacity: 0 })
-    .to($uploadSection, { opacity: 1, duration: 0.25 });
-  $btnRetake.click();
-}
-
-// ── 历史档案 ──────────────────────────────────────────────
-async function loadHistory() {
-  try {
-    const res = await fetch('/api/archive');
-    const { data } = await res.json();
-    $historyCount.textContent = data && data.length ? `${data.length} 条` : '';
-    if (!data || data.length === 0) {
-      $historyList.innerHTML = '<p class="empty-hint">暂无档案记录</p>';
-      return;
-    }
-    $historyList.innerHTML = data.map(item => `
-      <div class="history-item" data-id="${item.id}">
-        <div class="history-time">${item.created_at}</div>
-        <div class="history-preview">${escapeHtml(item.preview || '（无预览）')}</div>
-      </div>
-    `).join('');
-
-    $historyList.querySelectorAll('.history-item').forEach(el => {
-      el.addEventListener('click', () => showDetail(el.dataset.id));
-    });
-    gsap.from($historyList.querySelectorAll('.history-item'), { y: 16, opacity: 0, duration: 0.3, stagger: 0.04, ease: 'power2.out' });
-  } catch (_) {}
-}
-
-async function showDetail(id) {
-  currentModalId = id;
-  try {
-    const res = await fetch(`/api/archive/${id}`);
-    const json = await res.json();
-    const report = json.data?.full_report || '（无内容）';
-    // 优先用 marked，不可用时退回纯文本
-    if (typeof marked !== 'undefined') {
-      $modalContent.innerHTML = marked.parse(report);
-    } else {
-      $modalContent.innerHTML = `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(report)}</pre>`;
-    }
-    $modalOverlay.style.display = 'flex';
-    gsap.fromTo('.modal-card', { scale: 0.95, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.25, ease: 'power3.out' });
-    document.body.style.overflow = 'hidden';
-  } catch (e) {
-    alert('加载详情失败：' + e.message);
-  }
-}
-
-function closeModal() {
-  gsap.to('.modal-card', { scale: 0.95, opacity: 0, duration: 0.15, onComplete: () => {
-    $modalOverlay.style.display = 'none';
-    document.body.style.overflow = '';
-  }});
-  currentModalId = null;
-}
-
-$btnModalClose.addEventListener('click', closeModal);
-$modalOverlay.addEventListener('click', (e) => { if (e.target === $modalOverlay) closeModal(); });
-$btnModalDelete.addEventListener('click', async () => {
-  if (!currentModalId || !confirm('确定删除此档案？')) return;
-  await fetch(`/api/archive/${currentModalId}`, { method: 'DELETE' });
-  closeModal();
-  loadHistory();
-});
-
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $modalOverlay.style.display !== 'none') closeModal(); });
-
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-// ── 窗口 resize ───────────────────────────────────────────
 window.addEventListener('resize', () => {
-  if ($particleCanvas && $uploadArea) {
-    $particleCanvas.width = $uploadArea.offsetWidth;
-    $particleCanvas.height = $uploadArea.offsetHeight;
-  }
-  if (viewerActive) resizeViewer();
+  if (!viewerReady || !renderer || !$viewerContainer) return;
+  const w = $viewerContainer.clientWidth, h = $viewerContainer.clientHeight;
+  if (camera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  renderer.setSize(w, h);
 });
+
+// ── 页面入场 ────────────────────────────────────────────
+gsap.from('.sidebar', { x: -40, opacity: 0, duration: 0.4, ease: 'power3.out' });
+gsap.from('.chat-header', { y: -12, opacity: 0, duration: 0.35, delay: 0.1 });
+gsap.from('.composer', { y: 12, opacity: 0, duration: 0.35, delay: 0.15 });
 
 // ── 初始化 ────────────────────────────────────────────────
-pageEntrance();
-initParticles();
-loadHistory();
+loadConvs();
+if (state.conversations.length) {
+  openConv(state.conversations[0].id);
+} else {
+  newChat();
+}
+$chatInput.focus();

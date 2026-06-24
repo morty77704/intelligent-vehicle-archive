@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>智能车辆档案系统</title>
+  <title>智能车辆档案助手</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,107 +11,70 @@
   <div class="bg-glow bg-glow-1"></div>
   <div class="bg-glow bg-glow-2"></div>
 
-  <main class="app">
+  <!-- ============================================================ -->
+  <!-- 对话侧边栏 -->
+  <!-- ============================================================ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>对话历史</h2>
+      <button id="btnNewChat" class="btn btn-ghost btn-sm">+ 新对话</button>
+    </div>
+    <div class="conversation-list" id="conversationList">
+      <p class="empty-hint">暂无历史对话</p>
+    </div>
+  </aside>
 
-    <!-- ============================================================ -->
-    <!-- 头部 -->
-    <!-- ============================================================ -->
-    <header class="header">
-      <div class="logo">&#9673;</div>
-      <h1>智能车辆档案系统</h1>
-      <p>拍照上传，AI 自动生成完整车辆档案</p>
+  <!-- ============================================================ -->
+  <!-- 主区域 -->
+  <!-- ============================================================ -->
+  <main class="chat-shell" id="chatShell">
+
+    <!-- 顶部 -->
+    <header class="chat-header">
+      <div>
+        <h1>智能车辆档案助手</h1>
+        <p>上传车辆照片或输入问题，AI 自动生成完整档案</p>
+      </div>
+      <div class="header-actions">
+        <button id="btnToggle3D" class="btn btn-ghost btn-sm" title="3D预览">3D</button>
+        <button id="btnClearChat" class="btn btn-ghost btn-sm">清空</button>
+      </div>
     </header>
 
-    <!-- ============================================================ -->
-    <!-- 上传区 -->
-    <!-- ============================================================ -->
-    <section class="card upload-section" id="uploadSection">
-      <div class="upload-area" id="uploadArea">
-        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-        <div class="upload-placeholder" id="placeholder">
-          <div class="scan-ring" id="scanRing">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="1.2">
-              <rect x="3" y="3" width="18" height="18" rx="2.5"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <path d="M21 15l-5-5L5 21"/>
-            </svg>
-          </div>
-          <p>点击或拖拽上传车辆图片</p>
-          <p class="upload-hint">支持 JPG / PNG · 请拍摄完整车身，建议 45° 前侧角度，避免仅拍车牌或局部</p>
+    <!-- 消息区 -->
+    <section class="chat-messages" id="chatMessages"></section>
+
+    <!-- 3D 查看器（可收起） -->
+    <section class="viewer-panel" id="viewerPanel" style="display:none">
+      <div class="viewer-container" id="viewerContainer">
+        <div class="viewer-placeholder">
+          <span id="viewerPlaceholder">完成分析后显示 3D 预览</span>
         </div>
-        <img id="preview" class="preview-img" style="display:none" alt="预览">
-        <canvas id="particleCanvas" class="particle-canvas"></canvas>
-      </div>
-      <div class="upload-actions" id="uploadActions" style="display:none">
-        <button class="btn btn-outline" id="btnRetake">重新选择</button>
-        <button class="btn btn-primary" id="btnAnalyze">
-          <span class="btn-shine"></span>
-          开始分析
-        </button>
       </div>
     </section>
 
-    <!-- ============================================================ -->
-    <!-- 进度区 -->
-    <!-- ============================================================ -->
-    <section class="card progress-section" id="progressSection" style="display:none">
-      <div class="scan-line" id="scanLine"></div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-      <div class="progress-steps" id="progressSteps"></div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- 3D 预览 + 结果区 -->
-    <!-- ============================================================ -->
-    <div class="result-layout" id="resultLayout" style="display:none">
-      <section class="card viewer-card" id="viewerCard">
-        <div class="viewer-header">&#9673; 3D 预览</div>
-        <div class="viewer-container" id="viewerContainer">
-          <div class="viewer-placeholder" id="viewerPlaceholder">
-            <span>模型匹配中...</span>
-          </div>
+    <!-- 输入区 -->
+    <section class="composer" id="composer">
+      <div class="image-chip" id="imageChip" hidden>
+        <img id="imagePreview" alt="已选图片">
+        <div class="image-meta">
+          <span id="imageName">车辆图片</span>
+          <span>将随下一条消息发送</span>
         </div>
-      </section>
-      <section class="card report-card" id="reportCard">
-        <div class="report-content" id="reportContent"></div>
-      </section>
-    </div>
-
-    <div class="result-actions" id="resultActions" style="display:none">
-      <button class="btn btn-primary" id="btnNew">分析新车</button>
-    </div>
-
-    <!-- ============================================================ -->
-    <!-- 历史档案 -->
-    <!-- ============================================================ -->
-    <section class="history-section" id="historySection">
-      <div class="section-header">
-        <h2>历史档案</h2>
-        <span class="section-count" id="historyCount"></span>
+        <button id="btnRemoveImage" class="icon-btn" title="移除">×</button>
       </div>
-      <div class="history-grid" id="historyList">
-        <p class="empty-hint">暂无档案记录</p>
+      <div class="composer-row">
+        <button id="btnAttach" class="icon-btn" title="上传图片">+</button>
+        <input id="fileInput" type="file" accept="image/*" capture="environment" hidden>
+        <textarea id="chatInput" rows="1" placeholder="请拍摄完整车身，建议 45° 前侧角度，避免仅拍车牌或局部..."></textarea>
+        <button id="btnSend" class="send-btn">发送</button>
       </div>
     </section>
 
   </main>
 
-  <!-- 历史详情弹窗 -->
-  <div class="modal-overlay" id="modalOverlay" style="display:none">
-    <div class="modal-card" id="modalCard">
-      <div class="modal-top">
-        <button class="btn btn-outline" id="btnModalClose">关闭</button>
-        <button class="btn btn-outline-danger" id="btnModalDelete">删除</button>
-      </div>
-      <div class="modal-content" id="modalContent"></div>
-    </div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
