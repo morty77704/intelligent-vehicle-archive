@@ -176,14 +176,17 @@ body { display: flex; }
 .composer { padding: 12px 24px 16px; border-top: 1px solid var(--c-border); background: rgba(13,16,24,0.8); }
 
 .image-chip {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; margin-bottom: 10px;
-  background: var(--bg-card); border: 1px solid var(--c-border);
-  border-radius: 10px; max-width: 340px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 12px; max-width: 380px;
+  animation: chipIn 0.2s ease-out;
 }
-.image-chip img { width: 48px; height: 36px; object-fit: cover; border-radius: 4px; }
-.image-meta { font-size: 12px; color: var(--c-text-secondary); flex: 1; }
-.image-meta span:first-child { display: block; font-weight: 500; color: var(--c-text); }
+@keyframes chipIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.image-chip img { width: 56px; height: 42px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); }
+.image-meta { font-size: 12px; color: var(--c-text-secondary); flex: 1; line-height: 1.4; }
+.image-meta span:first-child { display: block; font-weight: 500; color: #C7D2FE; }
 
 .composer-row { display: flex; align-items: flex-end; gap: 8px; }
 .composer-row textarea {
@@ -213,6 +216,8 @@ body { display: flex; }
   flex-shrink: 0; transition: all 0.15s; font-family: var(--font);
 }
 .icon-btn:hover { border-color: var(--c-primary); color: var(--c-primary); background: rgba(99,102,241,0.06); }
+.icon-btn.danger { color: #EF4444; }
+.icon-btn.danger:hover { border-color: #EF4444; background: rgba(239,68,68,0.08); }
 
 .send-btn {
   width: 40px; height: 40px; border: none; border-radius: 12px;
