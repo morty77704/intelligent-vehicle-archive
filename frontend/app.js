@@ -116,9 +116,9 @@ function initViewer() {
 
   scene = new THREE.Scene();
 
-  camera = new THREE.PerspectiveCamera(45, w / h, 0.5, 50);
-  camera.position.set(4, 2.2, 5);
-  camera.lookAt(0, 0.3, 0);
+  camera = new THREE.PerspectiveCamera(38, w / h, 0.5, 50);
+  camera.position.set(4.5, 2.4, 5.5);
+  camera.lookAt(0, 0.35, 0);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(w, h);
@@ -126,39 +126,63 @@ function initViewer() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.3;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
-  // 光照
-  const ambient = new THREE.AmbientLight(0x3b3b5c, 2.5);
+  // 渐变背景
+  scene.background = new THREE.Color(0x0F1117);
+  scene.fog = new THREE.Fog(0x0F1117, 6, 16);
+
+  // 多光源
+  const ambient = new THREE.AmbientLight(0x334466, 1.8);
   scene.add(ambient);
-  const key = new THREE.DirectionalLight(0xffffff, 3);
-  key.position.set(5, 8, 4);
+
+  const key = new THREE.DirectionalLight(0xfff5ee, 4.5);
+  key.position.set(5, 6, 3);
   key.castShadow = true;
-  key.shadow.mapSize.set(512, 512);
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 20;
+  key.shadow.camera.left = -4; key.shadow.camera.right = 4;
+  key.shadow.camera.top = 4; key.shadow.camera.bottom = -4;
+  key.shadow.bias = -0.0001;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x818cf8, 2);
-  rim.position.set(-2, 1, -3);
+
+  const fill = new THREE.DirectionalLight(0x8899cc, 2.2);
+  fill.position.set(-3, 2, -2);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0x818cf8, 2.5);
+  rim.position.set(0, 1.5, -4);
   scene.add(rim);
 
-  // 地面
-  const groundGeo = new THREE.PlaneGeometry(12, 12);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 });
+  const under = new THREE.DirectionalLight(0x445577, 1.5);
+  under.position.set(0, -0.5, 1);
+  scene.add(under);
+
+  // 地面（暗色镜面）
+  const groundGeo = new THREE.PlaneGeometry(14, 14);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x181b28, roughness: 0.45, metalness: 0.2 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.2;
+  ground.position.y = -1.25;
   ground.receiveShadow = true;
   scene.add(ground);
+
+  // 环形灯台
+  const ringGeo = new THREE.TorusGeometry(2.2, 0.02, 8, 64);
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x6366f1, roughness: 0.2, emissive: 0x6366f1, emissiveIntensity: 0.6 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = -1.21;
+  scene.add(ring);
 
   // 车辆组
   carGroup = new THREE.Group();
   buildCar(carGroup);
   scene.add(carGroup);
-
-  // 网格线装饰
-  const gridHelper = new THREE.PolarGridHelper(3, 32, 24, 64, 0x6366f1, 0x6366f1);
-  gridHelper.position.y = -1.19;
-  scene.add(gridHelper);
 
   $viewerPlaceholder.style.display = 'none';
   animateViewer();
@@ -187,81 +211,219 @@ function initViewer() {
 }
 
 function buildCar(group) {
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc0c8e0, roughness: 0.25, metalness: 0.7 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.5, metalness: 0.3 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x2a2a4a, roughness: 0.1, metalness: 0.1, opacity: 0.5, transparent: true });
-  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffeedd, roughness: 0.2, metalness: 0.1, emissive: 0x331100, emissiveIntensity: 0.3 });
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
-  const hubMat = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.2, metalness: 0.9 });
+  const paintMat = new THREE.MeshStandardMaterial({ color: 0xc0c8e0, roughness: 0.18, metalness: 0.8 });
+  const darkPlastic = new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.55, metalness: 0.1 });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.15, metalness: 0.95 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x1a1a2e, roughness: 0.05, metalness: 0.05, clearcoat: 0.3, opacity: 0.55, transparent: true });
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.1, emissive: 0xffeecc, emissiveIntensity: 0.8 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff2222, roughness: 0.1, emissive: 0x440000, emissiveIntensity: 0.8 });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8, metalness: 0.1 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.1, metalness: 0.95 });
+  const underMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 });
 
-  // 车身底部
-  const bodyBase = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.35, 4.2), bodyMat);
-  bodyBase.position.y = 0.35;
-  bodyBase.castShadow = true;
-  group.add(bodyBase);
+  // ── 车身主体：Shape 挤出 ──────────────────────────
+  // 侧轮廓（x-z 平面看）
+  const bodyShape = new THREE.Shape();
+  const L = 4.4;       // 总长
+  const H = 0.95;      // 总高
+  const WB = 2.7;      // 轴距
+  const frOver = 0.85; // 前悬
+  const hoodLen = 1.15;
 
-  // 车身顶部（驾驶舱）
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.45, 1.8), glassMat);
-  cabin.position.set(0, 0.7, -0.15);
-  cabin.castShadow = true;
-  group.add(cabin);
+  bodyShape.moveTo(-L/2, 0);
+  // 前保险杠
+  bodyShape.lineTo(-L/2 + 0.05, 0.12);
+  bodyShape.lineTo(-L/2 + 0.15, 0.25);
+  // 引擎盖前沿
+  bodyShape.lineTo(-L/2 + frOver, 0.42);
+  // 引擎盖 → 挡风玻璃底部
+  bodyShape.lineTo(-L/2 + frOver + 0.3, 0.55);
+  // 挡风玻璃顶部（前倾）
+  bodyShape.lineTo(-L/2 + frOver + 1.0, H - 0.08);
+  // 车顶
+  bodyShape.lineTo(L/2 - frOver - 0.7, H - 0.08);
+  // 后挡风玻璃
+  bodyShape.lineTo(L/2 - frOver - 0.05, 0.55);
+  // 后备箱
+  bodyShape.lineTo(L/2 - 0.15, 0.42);
+  bodyShape.lineTo(L/2 - 0.05, 0.18);
+  // 后保险杠
+  bodyShape.lineTo(L/2, 0);
+  bodyShape.closePath();
 
-  // 前挡风
-  const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.38, 0.05), glassMat);
-  frontGlass.position.set(0, 0.78, 0.7);
-  frontGlass.rotation.x = -0.4;
-  group.add(frontGlass);
+  const extrudeSettings = { steps: 1, depth: 1.7, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.08, bevelSegments: 3 };
+  const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, extrudeSettings);
+  bodyGeo.translate(0, 0, -0.85);
+  bodyGeo.computeVertexNormals();
 
-  // 后挡风
-  const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.35, 0.05), glassMat);
-  rearGlass.position.set(0, 0.76, -0.95);
-  rearGlass.rotation.x = 0.4;
-  group.add(rearGlass);
+  const body = new THREE.Mesh(bodyGeo, paintMat);
+  body.position.y = 0.32;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
 
-  // 引擎盖
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.12, 0.9), bodyMat);
-  hood.position.set(0, 0.6, 1.3);
+  // ── 底盘 ──────────────────────────────────────────
+  const floorShape = new THREE.Shape();
+  floorShape.moveTo(-L/2 + 0.1, -0.1);
+  floorShape.lineTo(L/2 - 0.1, -0.1);
+  floorShape.lineTo(L/2 - 0.1, 0.1);
+  floorShape.lineTo(-L/2 + 0.1, 0.1);
+  floorShape.closePath();
+  const floorGeo = new THREE.ExtrudeGeometry(floorShape, { steps: 1, depth: 1.55, bevelEnabled: false });
+  floorGeo.translate(0, 0, -0.775);
+  const floor = new THREE.Mesh(floorGeo, underMat);
+  floor.position.y = 0.31;
+  group.add(floor);
+
+  // ── 车窗（黑玻璃一体式） ──────────────────────────
+  const glassShape = new THREE.Shape();
+  glassShape.moveTo(-L/2 + frOver + 0.3, 0.55);
+  glassShape.lineTo(-L/2 + frOver + 1.0, H - 0.08);
+  glassShape.lineTo(L/2 - frOver - 0.7, H - 0.08);
+  glassShape.lineTo(L/2 - frOver - 0.05, 0.55);
+  glassShape.closePath();
+  const glassGeo = new THREE.ExtrudeGeometry(glassShape, { steps: 1, depth: 1.5, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2 });
+  glassGeo.translate(0, 0, -0.75);
+  glassGeo.computeVertexNormals();
+  const glass = new THREE.Mesh(glassGeo, glassMat);
+  glass.position.y = 0.32;
+  glass.renderOrder = 1;
+  group.add(glass);
+
+  // ── 引擎盖隆起 ────────────────────────────────────
+  const hoodGeo = new THREE.BoxGeometry(1.5, 0.06, hoodLen, 4, 1, 2);
+  hoodGeo.attributes.position.needsUpdate = true;
+  const hood = new THREE.Mesh(hoodGeo, paintMat);
+  hood.position.set(0, 0.52, L/2 - frOver - hoodLen/2 + 0.1);
   hood.castShadow = true;
   group.add(hood);
 
-  // 后备箱
-  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.12, 0.75), bodyMat);
-  trunk.position.set(0, 0.6, -1.3);
+  // ── 后备箱盖 ──────────────────────────────────────
+  const trunkGeo = new THREE.BoxGeometry(1.5, 0.05, 0.55, 4, 1, 2);
+  const trunk = new THREE.Mesh(trunkGeo, paintMat);
+  trunk.position.set(0, 0.48, -L/2 + frOver + 0.2);
   trunk.castShadow = true;
   group.add(trunk);
 
-  // 前大灯
-  const headlightL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), lightMat);
-  headlightL.position.set(0.65, 0.45, 1.85);
-  group.add(headlightL);
-  const headlightR = headlightL.clone();
-  headlightR.position.x = -0.65;
-  group.add(headlightR);
+  // ── 前保险杠下格栅 ────────────────────────────────
+  const bumperGeo = new THREE.BoxGeometry(1.3, 0.08, 0.1);
+  const bumper = new THREE.Mesh(bumperGeo, darkPlastic);
+  bumper.position.set(0, 0.24, L/2 - 0.1);
+  group.add(bumper);
 
-  // 尾灯
-  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff3333, roughness: 0.2, emissive: 0x330000, emissiveIntensity: 0.5 });
-  const taillightL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.1, 0.08), tailMat);
-  taillightL.position.set(0.6, 0.5, -2.05);
-  group.add(taillightL);
-  const taillightR = taillightL.clone();
-  taillightR.position.x = -0.6;
-  group.add(taillightR);
+  // ── 前格栅（镀铬） ────────────────────────────────
+  const grilleGeo = new THREE.BoxGeometry(0.55, 0.2, 0.06);
+  const grille = new THREE.Mesh(grilleGeo, chromeMat);
+  grille.position.set(0, 0.5, L/2 - 0.12);
+  group.add(grille);
 
-  // 车轮
-  for (let side of [-1, 1]) {
-    for (let z of [1.2, -1.2]) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 24), wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(side * 0.95, 0.26, z);
-      wheel.castShadow = true;
-      group.add(wheel);
-
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.23, 8), hubMat);
-      hub.rotation.z = Math.PI / 2;
-      hub.position.set(side * 0.95, 0.26, z);
-      group.add(hub);
-    }
+  // 格栅竖条
+  for (let i = -2; i <= 2; i++) {
+    const barGeo = new THREE.BoxGeometry(0.03, 0.18, 0.08);
+    const bar = new THREE.Mesh(barGeo, chromeMat);
+    bar.position.set(i * 0.11, 0.5, L/2 - 0.11);
+    group.add(bar);
   }
+
+  // ── 前大灯 ────────────────────────────────────────
+  for (let side of [-1, 1]) {
+    const lampGeo = new THREE.BoxGeometry(0.22, 0.1, 0.1, 2, 1, 1);
+    const lamp = new THREE.Mesh(lampGeo, lightMat);
+    lamp.position.set(side * 0.62, 0.44, L/2 - 0.18);
+    group.add(lamp);
+
+    // 日行灯条
+    const drlGeo = new THREE.BoxGeometry(0.2, 0.025, 0.02);
+    const drl = new THREE.Mesh(drlGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, emissive: 0xccddff, emissiveIntensity: 1.5 }));
+    drl.position.set(side * 0.62, 0.38, L/2 - 0.15);
+    group.add(drl);
+  }
+
+  // ── 尾灯 ──────────────────────────────────────────
+  for (let side of [-1, 1]) {
+    const tlGeo = new THREE.BoxGeometry(0.28, 0.08, 0.08);
+    const tl = new THREE.Mesh(tlGeo, tailMat);
+    tl.position.set(side * 0.6, 0.46, -L/2 + 0.15);
+    group.add(tl);
+  }
+
+  // ── 后视镜 ────────────────────────────────────────
+  for (let side of [-1, 1]) {
+    const mirrorGeo = new THREE.BoxGeometry(0.1, 0.08, 0.12, 2, 2, 2);
+    const mirror = new THREE.Mesh(mirrorGeo, paintMat);
+    mirror.position.set(side * 0.92, 0.72, L/2 - frOver - 0.2);
+    mirror.rotation.y = side * 0.3;
+    group.add(mirror);
+  }
+
+  // ── 车门线 ────────────────────────────────────────
+  for (let z of [-0.2, 0.5]) {
+    const lineGeo = new THREE.BoxGeometry(0.005, 0.28, 0.005);
+    const line = new THREE.Mesh(lineGeo, darkPlastic);
+    line.position.set(0, 0.52, z);
+    group.add(line);
+  }
+
+  // ── 车轮 ──────────────────────────────────────────
+  const wheelPositions = [
+    { x: 0.92, z: 1.0 },
+    { x: -0.92, z: 1.0 },
+    { x: 0.92, z: -1.0 },
+    { x: -0.92, z: -1.0 },
+  ];
+
+  wheelPositions.forEach(pos => {
+    const wheelGroup = new THREE.Group();
+
+    // 轮胎
+    const tireGeo = new THREE.TorusGeometry(0.29, 0.09, 12, 24);
+    const tire = new THREE.Mesh(tireGeo, tireMat);
+    tire.rotation.y = Math.PI / 2;
+    tire.castShadow = true;
+    wheelGroup.add(tire);
+
+    // 轮辋
+    const rimGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.24, 18);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.z = Math.PI / 2;
+    wheelGroup.add(rim);
+
+    // 轮辐（5辐式）
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2;
+      const spokeGeo = new THREE.BoxGeometry(0.025, 0.18, 0.2);
+      const spoke = new THREE.Mesh(spokeGeo, rimMat);
+      spoke.rotation.z = angle;
+      spoke.position.x = Math.cos(angle) * 0.09;
+      spoke.position.y = Math.sin(angle) * 0.09;
+      wheelGroup.add(spoke);
+    }
+
+    // 中心盖
+    const capGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.25, 12);
+    const cap = new THREE.Mesh(capGeo, chromeMat);
+    cap.rotation.z = Math.PI / 2;
+    wheelGroup.add(cap);
+
+    // 刹车盘
+    const discGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.03, 18);
+    const disc = new THREE.Mesh(discGeo, chromeMat);
+    disc.rotation.z = Math.PI / 2;
+    disc.position.x = 0.01;
+    wheelGroup.add(disc);
+
+    wheelGroup.position.set(pos.x, 0.3, pos.z);
+    group.add(wheelGroup);
+  });
+
+  // ── 轮拱 ──────────────────────────────────────────
+  wheelPositions.forEach(pos => {
+    const archGeo = new THREE.TorusGeometry(0.33, 0.025, 6, 16, Math.PI);
+    const arch = new THREE.Mesh(archGeo, darkPlastic);
+    arch.rotation.set(0, pos.z > 0 ? -Math.PI/2 : Math.PI/2, 0);
+    arch.position.set(pos.x, 0.62, pos.z);
+    group.add(arch);
+  });
 }
 
 function updateCarColor(hex) {
