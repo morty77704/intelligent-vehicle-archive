@@ -96,21 +96,47 @@
     return msgText(last).replace(/[#*`\n]/g, ' ').slice(0, 35);
   }
 
+  function deleteConv(id, e) {
+    e.stopPropagation();
+    if (!confirm('确定删除此对话？')) return;
+    state.conversations = state.conversations.filter(function (c) { return c.id !== id; });
+    if (state.activeId === id) {
+      state.activeId = '';
+      state.messages = [];
+      chatMsgs.innerHTML = '';
+    }
+    saveConvs();
+    renderConvList();
+  }
+
   function renderConvList() {
     if (!state.conversations.length) {
       convList.innerHTML = '<p class="empty-hint">暂无历史对话</p>';
       return;
     }
+    // 按更新时间降序
+    state.conversations.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
     convList.innerHTML = state.conversations.map(function (c) {
       var cls = c.id === state.activeId ? ' active' : '';
-      return '<button class="conversation-item' + cls + '" data-id="' + c.id + '">'
+      return '<div class="conversation-item' + cls + '" data-id="' + c.id + '">'
+        + '<div class="conv-main">'
         + '<span class="conversation-title">' + esc(c.title || '未命名') + '</span>'
         + '<span class="conversation-preview">' + esc(convPreview(c.messages)) + '</span>'
         + '<span class="conversation-time">' + esc(c.updatedAt || '') + '</span>'
-        + '</button>';
+        + '</div>'
+        + '<button class="conv-delete" data-del="' + c.id + '">×</button>'
+        + '</div>';
     }).join('');
     convList.querySelectorAll('.conversation-item').forEach(function (el) {
-      el.addEventListener('click', function () { openConv(el.dataset.id); });
+      el.addEventListener('click', function (e) {
+        if (e.target.closest('.conv-delete')) return;
+        openConv(el.dataset.id);
+      });
+    });
+    convList.querySelectorAll('.conv-delete').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        deleteConv(btn.dataset.del, e);
+      });
     });
   }
 
@@ -193,14 +219,16 @@
   // ── 图片上传 ──────────────────────────────────────────
   function clearImage() {
     state.imageBase64 = ''; state.imageUrl = '';
-    imageChip.hidden = true; fileInput.value = '';
+    imageChip.hidden = true;
+    imagePreview.src = '';
+    fileInput.value = '';
   }
 
   btnAttach.addEventListener('click', function () { fileInput.click(); });
 
   fileInput.addEventListener('change', function () {
     var file = fileInput.files[0];
-    if (!file) return;
+    if (!file) { clearImage(); return; }
     if (!file.type.match(/^image\//)) { alert('请选择图片文件'); return; }
     imageName.textContent = file.name;
     var reader = new FileReader();
@@ -209,18 +237,21 @@
       state.imageBase64 = ev.target.result.split(',')[1] || '';
       imagePreview.src = ev.target.result;
       imageChip.hidden = false;
-      chatInput.focus();
     };
     reader.onerror = function () { alert('图片读取失败，请重试'); };
     reader.readAsDataURL(file);
   });
 
-  btnRemoveImg.addEventListener('click', clearImage);
+  btnRemoveImg.addEventListener('click', function (e) {
+    e.stopPropagation();
+    clearImage();
+  });
 
   // ── 发送消息 ──────────────────────────────────────────
   async function doSend() {
     var text = chatInput.value.trim();
-    if (!text && !state.imageBase64) return;
+    var hasImage = !!(state.imageBase64 && state.imageBase64.length > 50);
+    if (!text && !hasImage) return;
     if (state.sending) return;
 
     state.sending = true;
@@ -228,7 +259,8 @@
 
     var imgUrl = state.imageUrl;
     var imgB64 = state.imageBase64;
-    pushUser(text || '请分析这辆车', imgUrl);
+    var queryText = text || (hasImage ? '帮我识别这辆车，生成完整档案' : '');
+    pushUser(queryText, imgUrl);
     clearImage();
     chatInput.value = '';
     chatInput.style.height = 'auto';
@@ -237,7 +269,7 @@
       var response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imgB64, query: text || '帮我识别这辆车' }),
+        body: JSON.stringify({ image: imgB64, query: queryText }),
       });
 
       if (!response.ok) {
