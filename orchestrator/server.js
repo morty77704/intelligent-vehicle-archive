@@ -76,6 +76,9 @@ function deleteArchive(id) {
 // ── DeepSeek API 配置 ─────────────────────────────────────
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+const BAILIAN_API_KEY = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || process.env.ALIYUN_BAILIAN_API_KEY || '';
+const BAILIAN_BASE_URL = process.env.DASHSCOPE_BASE_URL || process.env.BAILIAN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const BAILIAN_MODEL = process.env.BAILIAN_MODEL || process.env.DASHSCOPE_MODEL || 'qwen3-vl-plus';
 const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 15000);
 
 const SYSTEM_PROMPT = `你是智能车辆档案系统助手。你可以使用工具来识别车辆信息。
@@ -275,15 +278,103 @@ async function runLocalAnalysis(image, res) {
 }
 
 // ── DeepSeek 对话循环 ─────────────────────────────────────
+const CHAT_SYSTEM_PROMPT = `你是智能车辆档案系统助手，可以处理两类请求。
+
+一、文字咨询
+- 回答车辆相关问题，包括车型对比、购车建议、维修保养、二手车估价、车牌规则、保险建议等。
+- 如果问题可以直接回答，就直接给出清晰、简洁、专业的建议。
+- 只有当用户要求查询具体车型参数、车牌信息、违章记录、维修估价、保险建议等结构化信息时，才调用工具。
+
+二、图片分析
+- 用户上传车辆图片后，先调用 recognize_vehicle、detect_plate、assess_condition 获取基础信息。
+- 再根据识别结果调用车辆参数、市场价格、车牌信息、违章记录、车辆历史、维修和保险相关工具。
+- 最后整合生成车辆档案报告。
+
+回复要求：
+- 使用 Markdown。
+- 结论先行，再给依据。
+- 对识别置信度偏低的内容，提醒用户人工复核。
+- 某个模块不可用时标注 [DEGRADED]，并基于已有信息继续回答。
+- 不要编造无法从工具或常识判断的精确信息。`;
+
+function getLastUserMessage(messages) {
+  return [...messages].reverse().find((msg) => msg && msg.role === 'user') || null;
+}
+
+function getLastUserText(messages) {
+  const lastUser = getLastUserMessage(messages);
+  if (!lastUser) return '';
+  if (typeof lastUser.content === 'string') return lastUser.content;
+  if (Array.isArray(lastUser.content)) {
+    return lastUser.content
+      .filter((item) => item && item.type === 'text')
+      .map((item) => item.text || '')
+      .join('\n');
+  }
+  return '';
+}
+
+function getLastUserImage(messages) {
+  const lastUser = getLastUserMessage(messages);
+  if (!lastUser || !Array.isArray(lastUser.content)) return '';
+  const imageUrl = lastUser.content.find((item) => item?.type === 'image_url')?.image_url?.url || '';
+  return imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
+}
+
+function buildLocalTextReply(text) {
+  const question = text.trim() || '车辆相关问题';
+  return [
+    '## 本地演示回复',
+    '',
+    `你刚才问的是：${question}`,
+    '',
+    '当前未配置 `DEEPSEEK_API_KEY`，所以文字智能问答会使用本地演示模式。',
+    '',
+    '你可以继续上传车辆图片，我会调用本地 Agent 完成车型、车牌和车况分析；如果需要真实开放式问答，请配置 DeepSeek API Key 后重启 orchestrator。'
+  ].join('\n');
+}
+
+async function chatWithBailian(messages) {
+  const response = await fetch(`${BAILIAN_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${BAILIAN_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: BAILIAN_MODEL,
+      messages: [
+        { role: 'system', content: CHAT_SYSTEM_PROMPT },
+        ...messages
+      ],
+      temperature: 0.7,
+      max_tokens: 4096
+    }),
+    signal: AbortSignal.timeout(60000)
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`百炼 API 错误: ${response.status} - ${err}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '模型没有返回内容。';
+}
+
 async function chatWithTools(messages, res) {
+  if (BAILIAN_API_KEY) {
+    return chatWithBailian(messages);
+  }
+
   if (!DEEPSEEK_API_KEY) {
-    const imageUrl = messages[0]?.content?.find?.((item) => item.type === 'image_url')?.image_url?.url || '';
-    const image = imageUrl.includes(',') ? imageUrl.split(',')[1] : '';
-    return runLocalAnalysis(image, res);
+    const image = getLastUserImage(messages);
+    if (image) return runLocalAnalysis(image, res);
+    return buildLocalTextReply(getLastUserText(messages));
   }
 
   const history = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: CHAT_SYSTEM_PROMPT },
     ...messages
   ];
 
@@ -346,6 +437,36 @@ async function chatWithTools(messages, res) {
 }
 
 // ── 主入口 ────────────────────────────────────────────────
+app.post('/api/chat', async (req, res) => {
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({
+      error: { code: 'NO_MESSAGES', message: '请提供消息历史' }
+    });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+
+  try {
+    const reply = await chatWithTools(messages, res);
+    const isImageRequest = !!getLastUserImage(messages);
+    if (isImageRequest && reply) {
+      saveArchive(reply);
+    }
+    res.write(`data: ${JSON.stringify({ type: 'message', kind: isImageRequest ? 'report' : 'text', content: reply })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+  } catch (e) {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
 app.post('/api/analyze', async (req, res) => {
   const { image, query } = req.body;
   if (!image) return res.status(400).json({ error: { code: 'NO_IMAGE', message: '请提供车辆图片' } });
@@ -376,6 +497,7 @@ app.post('/api/analyze', async (req, res) => {
       saveArchive(report);
     }
 
+    res.write(`data: ${JSON.stringify({ type: 'message', kind: 'report', content: report })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'report', content: report })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
   } catch (e) {

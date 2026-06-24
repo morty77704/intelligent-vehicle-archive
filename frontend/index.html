@@ -3,57 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>智能车辆档案系统</title>
+  <title>智能车辆档案助手</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
 <body>
-  <div class="container">
-    <!-- 头部 -->
-    <header class="header">
-      <h1>🚗 智能车辆档案系统</h1>
-      <p>拍照上传，AI 自动生成完整车辆档案</p>
-    </header>
+  <main class="app-shell">
+    <aside class="conversation-sidebar" aria-label="对话历史">
+      <div class="sidebar-header">
+        <h2>对话历史</h2>
+        <button id="btnNewChat" type="button" class="ghost-btn">新对话</button>
+      </div>
+      <div class="conversation-list" id="conversationList">
+        <p class="empty-hint">暂无历史对话</p>
+      </div>
+    </aside>
 
-    <!-- 上传区 -->
-    <section class="upload-section" id="uploadSection">
-      <div class="upload-area" id="uploadArea">
-        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-        <div class="upload-placeholder">
-          <span class="upload-icon">📸</span>
-          <p>点击上传车辆图片 或 拍照</p>
-          <p class="upload-hint">支持 JPG / PNG，建议拍摄车辆正面</p>
+    <section class="chat-shell">
+      <section class="chat-header">
+        <div>
+          <h1>智能车辆档案助手</h1>
+          <p>输入车辆问题，或上传车辆照片进行识别分析</p>
         </div>
-        <img id="preview" class="preview-img" style="display:none">
-      </div>
-      <div class="upload-actions" id="uploadActions" style="display:none">
-        <button class="btn btn-secondary" id="btnRetake">重新拍照</button>
-        <button class="btn btn-primary" id="btnAnalyze">开始分析</button>
-      </div>
-    </section>
+        <button id="btnClear" type="button" class="ghost-btn">清空</button>
+      </section>
 
-    <!-- 进度区 -->
-    <section class="progress-section" id="progressSection" style="display:none">
-      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-      <div class="progress-steps" id="progressSteps"></div>
-    </section>
+      <section class="chat-messages" id="chatMessages" aria-live="polite"></section>
 
-    <!-- 结果区 -->
-    <section class="result-section" id="resultSection" style="display:none">
-      <div class="report-card" id="reportContent"></div>
-      <div class="result-actions">
-        <button class="btn btn-primary" id="btnNew">分析新车</button>
-      </div>
-    </section>
+      <section class="composer" aria-label="发送消息">
+        <div class="image-chip" id="imageChip" hidden>
+          <img id="imagePreview" alt="已选择图片">
+          <div class="image-meta">
+            <span id="imageName">车辆图片</span>
+            <span>将随下一条消息发送</span>
+          </div>
+          <button id="btnRemoveImage" type="button" class="icon-btn" aria-label="移除图片" title="移除图片">×</button>
+        </div>
 
-    <!-- 历史档案 -->
-    <section class="history-section" id="historySection">
-      <h2>📋 历史档案</h2>
-      <div class="history-list" id="historyList">
-        <p class="empty-hint">暂无档案记录</p>
-      </div>
+        <div class="composer-row">
+          <button id="btnAttach" type="button" class="icon-btn" aria-label="上传图片" title="上传图片">+</button>
+          <input id="fileInput" type="file" accept="image/*" capture="environment" hidden>
+          <textarea id="chatInput" rows="1" placeholder="输入车辆问题，或上传照片..." aria-label="消息内容"></textarea>
+          <button id="btnSend" type="button" class="send-btn">发送</button>
+        </div>
+      </section>
     </section>
-  </div>
-
-  <script src="app.js"></script>
+  </main>
 </body>
 </html>
