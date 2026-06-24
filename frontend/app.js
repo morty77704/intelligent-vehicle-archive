@@ -2,6 +2,17 @@
    智能车辆档案助手 — 对话式 + 3D + GSAP
    ============================================================ */
 
+// ── 安全守卫：CDN 可能不可用 ──────────────────────────────
+const hasGSAP = typeof gsap !== 'undefined';
+const hasTHREE = typeof THREE !== 'undefined';
+const hasMarked = typeof marked !== 'undefined';
+
+// 安全动画：gsap 不可用时直接执行回调
+function safeFrom(el, vars) {
+  if (hasGSAP && el) safeFrom(el, vars);
+}
+function safeAnim(fn) { if (hasGSAP) fn(); }
+
 // ── DOM ──────────────────────────────────────────────────
 const $sidebar      = document.getElementById('sidebar');
 const $convList     = document.getElementById('conversationList');
@@ -44,7 +55,7 @@ function esc(s) {
 
 function renderMD(content) {
   if (!content) return '';
-  if (typeof marked !== 'undefined') return marked.parse(content);
+  if (hasMarked) return marked.parse(content);
   return '<pre style="white-space:pre-wrap;font-family:inherit">' + esc(content) + '</pre>';
 }
 
@@ -214,7 +225,7 @@ $fileInput.addEventListener('change', (e) => {
     state.imageBase64 = ev.target.result.split(',')[1];
     $imagePreview.src = ev.target.result;
     $imageChip.hidden = false;
-    gsap.from($imageChip, { y: -8, opacity: 0, duration: 0.25 });
+    safeFrom($imageChip, { y: -8, opacity: 0, duration: 0.25 });
     $chatInput.focus();
   };
   reader.readAsDataURL(file);
@@ -302,6 +313,7 @@ async function send() {
 let scene, camera, renderer, carGroup, viewerReady = false;
 
 function showViewer() {
+  if (!hasTHREE) return;
   $viewerPanel.style.display = 'block';
   if (!viewerReady) initViewer();
 }
@@ -312,6 +324,7 @@ $btnToggle3D.addEventListener('click', () => {
 });
 
 function initViewer() {
+  if (!hasTHREE) { return; }
   viewerReady = true;
   const w = $viewerContainer.clientWidth || 600;
   const h = $viewerContainer.clientHeight || 240;
@@ -512,9 +525,9 @@ window.addEventListener('resize', () => {
 });
 
 // ── 页面入场 ────────────────────────────────────────────
-gsap.from('.sidebar', { x: -40, opacity: 0, duration: 0.4, ease: 'power3.out' });
-gsap.from('.chat-header', { y: -12, opacity: 0, duration: 0.35, delay: 0.1 });
-gsap.from('.composer', { y: 12, opacity: 0, duration: 0.35, delay: 0.15 });
+safeFrom('.sidebar', { x: -40, opacity: 0, duration: 0.4, ease: 'power3.out' });
+safeFrom('.chat-header', { y: -12, opacity: 0, duration: 0.35, delay: 0.1 });
+safeFrom('.composer', { y: 12, opacity: 0, duration: 0.35, delay: 0.15 });
 
 // ── 初始化 ────────────────────────────────────────────────
 loadConvs();
