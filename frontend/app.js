@@ -151,7 +151,7 @@ function setAuthBusy(busy) {
   authRegisterForm.querySelectorAll('input, button').forEach((item) => { item.disabled = busy; });
 }
 
-function readFaceImage() {
+function readFaceImageFromFile() {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -168,6 +168,81 @@ function readFaceImage() {
     }, { once: true });
     input.click();
   });
+}
+
+function openCamera() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      reject(new Error('当前浏览器不支持摄像头采集'));
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'camera-overlay';
+    overlay.innerHTML = `
+      <div class="camera-modal" role="dialog" aria-modal="true" aria-label="人脸采集">
+        <div class="camera-header">
+          <span>请正视摄像头</span>
+          <button class="camera-close-btn" type="button" aria-label="关闭">×</button>
+        </div>
+        <video class="camera-video" autoplay playsinline muted></video>
+        <canvas class="camera-canvas" hidden></canvas>
+        <div class="camera-actions">
+          <button class="camera-capture-btn" type="button" aria-label="拍照"></button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const video = overlay.querySelector('.camera-video');
+    const canvas = overlay.querySelector('.camera-canvas');
+    const captureBtn = overlay.querySelector('.camera-capture-btn');
+    const closeBtn = overlay.querySelector('.camera-close-btn');
+    let stream = null;
+    let settled = false;
+
+    function cleanup() {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      overlay.remove();
+    }
+
+    function finish(fn, value) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn(value);
+    }
+
+    closeBtn.addEventListener('click', () => {
+      finish(reject, new Error('已取消人脸采集'));
+    });
+
+    navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+      audio: false,
+    }).then((mediaStream) => {
+      stream = mediaStream;
+      video.srcObject = mediaStream;
+      return video.play();
+    }).catch((e) => {
+      finish(reject, new Error(`无法访问摄像头：${e.message}`));
+    });
+
+    captureBtn.addEventListener('click', () => {
+      if (!video.videoWidth || !video.videoHeight) {
+        finish(reject, new Error('摄像头画面尚未准备好，请重试'));
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      finish(resolve, canvas.toDataURL('image/jpeg', 0.9));
+    });
+  });
+}
+
+function readFaceImage() {
+  return openCamera();
 }
 
 async function requestAuth(path, body) {

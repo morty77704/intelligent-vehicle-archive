@@ -656,6 +656,83 @@ input:disabled {
   background: #fff1f0;
 }
 
+.camera-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.camera-modal {
+  width: min(520px, 100%);
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.28);
+}
+
+.camera-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.camera-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.camera-close-btn:hover {
+  background: #e2e8f0;
+}
+
+.camera-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: #000000;
+  object-fit: cover;
+}
+
+.camera-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.camera-capture-btn {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #1f6feb;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.camera-capture-btn:hover {
+  transform: scale(1.06);
+}
+
+.camera-capture-btn:active {
+  transform: scale(0.96);
+}
+
 @media (max-width: 760px) {
   .app-shell {
     height: 100dvh;
