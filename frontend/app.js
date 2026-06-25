@@ -1,333 +1,919 @@
-/* ============================================================
-   智能车辆档案助手
-   ============================================================ */
-(function () {
-  'use strict';
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const btnSend = document.getElementById('btnSend');
+const btnAttach = document.getElementById('btnAttach');
+const btnRemoveImage = document.getElementById('btnRemoveImage');
+const btnClear = document.getElementById('btnClear');
+const btnNewChat = document.getElementById('btnNewChat');
+const fileInput = document.getElementById('fileInput');
+const imageChip = document.getElementById('imageChip');
+const imagePreview = document.getElementById('imagePreview');
+const imageName = document.getElementById('imageName');
+const conversationList = document.getElementById('conversationList');
+const authGate = document.getElementById('authGate');
+const authTabs = document.querySelectorAll('.auth-tab');
+const authPasswordForm = document.getElementById('authPasswordForm');
+const authFaceForm = document.getElementById('authFaceForm');
+const authRegisterForm = document.getElementById('authRegisterForm');
+const authMessage = document.getElementById('authMessage');
+const authPhone = document.getElementById('authPhone');
+const authPassword = document.getElementById('authPassword');
+const authName = document.getElementById('authName');
+const authAge = document.getElementById('authAge');
+const authRegisterPhone = document.getElementById('authRegisterPhone');
+const authRegisterPassword = document.getElementById('authRegisterPassword');
+const btnFaceLogin = document.getElementById('btnFaceLogin');
+const btnRegister = document.getElementById('btnRegister');
+const btnLogout = document.getElementById('btnLogout');
+const currentUser = document.getElementById('currentUser');
 
-  // ── DOM ────────────────────────────────────────────────
-  const $ = (id) => document.getElementById(id);
-  const convList = $('conversationList');
-  const chatMsgs = $('chatMessages');
-  const chatInput = $('chatInput');
-  const btnSend = $('btnSend');
-  const btnAttach = $('btnAttach');
-  const fileInput = $('fileInput');
-  const imageChip = $('imageChip');
-  const imagePreview = $('imagePreview');
-  const imageName = $('imageName');
-  const btnRemoveImg = $('btnRemoveImage');
-  const btnNewChat = $('btnNewChat');
-  const btnClear = $('btnClearChat');
+const STORAGE_KEY = 'vehicle-chat-conversations-v1';
+const AI_MODE_KEY = 'vehicle-chat-ai-mode-v1';
+const AUTH_SESSION_KEY = 'vehicle-auth-session-v1';
 
-  if (!chatMsgs || !chatInput || !btnSend) {
-    alert('页面加载失败，请刷新重试');
+const conversationMenu = document.createElement('div');
+conversationMenu.className = 'conversation-menu';
+conversationMenu.hidden = true;
+conversationMenu.innerHTML = '<button type="button" data-action="delete">删除</button>';
+document.body.appendChild(conversationMenu);
+
+const btnAiMode = document.createElement('button');
+btnAiMode.id = 'btnAiMode';
+btnAiMode.type = 'button';
+btnAiMode.className = 'mode-toggle active';
+btnAiMode.setAttribute('aria-pressed', 'true');
+btnAiMode.title = '切换 AI 模式';
+
+const composerRow = document.querySelector('.composer-row');
+if (composerRow && chatInput) {
+  composerRow.insertBefore(btnAiMode, chatInput);
+}
+
+const state = {
+  messages: [],
+  conversations: [],
+  activeConversationId: '',
+  selectedImages: [],
+  sending: false,
+  abortController: null,
+  currentAiBubble: null,
+  currentUserMessage: null,
+  currentFinalContent: '',
+  menuConversationId: '',
+  aiMode: localStorage.getItem(AI_MODE_KEY) !== 'off',
+  user: loadAuthSession(),
+};
+
+const TOOL_LABELS = {
+  recognize_vehicle: '识别车型',
+  detect_plate: '识别车牌',
+  assess_condition: '评估车况',
+  query_vehicle_params: '查询车辆参数',
+  estimate_market_price: '估算市场价格',
+  query_plate_info: '查询车牌信息',
+  check_violation: '查询违章记录',
+  query_vehicle_history: '查询车辆历史',
+  diagnose_damage: '诊断损伤',
+  estimate_repair: '估算维修费用',
+  recommend_insurance: '生成保险建议',
+};
+
+function renderMarkdown(content) {
+  if (!content) return '';
+  if (window.marked) return marked.parse(content);
+  return escapeHtml(content).replace(/\n/g, '<br>');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function nowText() {
+  return new Date().toLocaleString('zh-CN', { hour12: false });
+}
+
+function createId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadAuthSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
+    if (session && session.user_id && session.user_name) return session;
+  } catch (e) {
+    // Ignore invalid persisted sessions.
+  }
+  return null;
+}
+
+function saveAuthSession(user) {
+  state.user = user;
+  if (user) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+  else localStorage.removeItem(AUTH_SESSION_KEY);
+  updateAuthView();
+}
+
+function updateAuthView() {
+  const loggedIn = !!state.user;
+  if (authGate) authGate.hidden = loggedIn;
+  if (currentUser) {
+    currentUser.hidden = !loggedIn;
+    currentUser.textContent = loggedIn ? `当前用户：${state.user.user_name}` : '';
+  }
+  if (btnLogout) btnLogout.hidden = !loggedIn;
+  if (loggedIn) chatInput.focus();
+}
+
+function setAuthMode(mode) {
+  authTabs.forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.authMode === mode);
+  });
+  authPasswordForm.hidden = mode !== 'password';
+  authFaceForm.hidden = mode !== 'face';
+  authRegisterForm.hidden = mode !== 'register';
+  setAuthMessage('');
+}
+
+function setAuthMessage(message, type = '') {
+  authMessage.textContent = message || '';
+  authMessage.className = `auth-message ${type}`.trim();
+}
+
+function setAuthBusy(busy) {
+  authTabs.forEach((tab) => { tab.disabled = busy; });
+  authPasswordForm.querySelectorAll('input, button').forEach((item) => { item.disabled = busy; });
+  authFaceForm.querySelectorAll('button').forEach((item) => { item.disabled = busy; });
+  authRegisterForm.querySelectorAll('input, button').forEach((item) => { item.disabled = busy; });
+}
+
+function openCamera() {
+  return new Promise((resolve, reject) => {
+    // 创建摄像头弹窗
+    const overlay = document.createElement('div');
+    overlay.className = 'camera-overlay';
+    overlay.innerHTML = `
+      <div class="camera-modal">
+        <div class="camera-header">
+          <span>请正视摄像头</span>
+          <button class="camera-close-btn">×</button>
+        </div>
+        <video class="camera-video" autoplay playsinline muted></video>
+        <canvas class="camera-canvas" hidden></canvas>
+        <div class="camera-actions">
+          <button class="camera-capture-btn">拍照</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const video = overlay.querySelector('.camera-video');
+    const canvas = overlay.querySelector('.camera-canvas');
+    const captureBtn = overlay.querySelector('.camera-capture-btn');
+    const closeBtn = overlay.querySelector('.camera-close-btn');
+    let stream = null;
+
+    function cleanup() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      overlay.remove();
+    }
+
+    closeBtn.addEventListener('click', () => { cleanup(); reject(new Error('用户取消')); });
+
+    // 启动摄像头
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } })
+      .then(s => {
+        stream = s;
+        video.srcObject = s;
+        video.play();
+      })
+      .catch(e => { cleanup(); reject(new Error('无法访问摄像头：' + e.message)); });
+
+    // 拍照
+    captureBtn.addEventListener('click', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      cleanup();
+      resolve(dataUrl);
+    });
+  });
+}
+
+async function readFaceImage() {
+  return await openCamera();
+}
+
+async function requestAuth(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.msg || data.error?.message || `认证服务错误：${response.status}`);
+  if (data.status !== 200) throw new Error(data.msg || '认证失败');
+  return data;
+}
+
+async function loginWithPassword(event) {
+  event.preventDefault();
+  setAuthBusy(true);
+  setAuthMessage('正在登录...');
+  try {
+    const data = await requestAuth('/api/auth/login/password', {
+      phone: authPhone.value.trim(),
+      password: authPassword.value,
+    });
+    saveAuthSession({ user_id: data.user_id, user_name: data.user_name });
+    setAuthMessage('登录成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function loginWithFace() {
+  setAuthBusy(true);
+  setAuthMessage('请选择或拍摄人脸图片...');
+  try {
+    const image = await readFaceImage();
+    setAuthMessage('正在识别人脸...');
+    const data = await requestAuth('/api/auth/login/face', { image });
+    saveAuthSession({ user_id: data.user_id, user_name: data.user_name });
+    setAuthMessage('登录成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function registerWithFace() {
+  setAuthBusy(true);
+  setAuthMessage('请选择或拍摄人脸图片...');
+  try {
+    const image = await readFaceImage();
+    setAuthMessage('正在注册...');
+    const data = await requestAuth('/api/auth/register', {
+      image,
+      name: authName.value.trim(),
+      age: authAge.value.trim(),
+      phone: authRegisterPhone.value.trim(),
+      password: authRegisterPassword.value,
+    });
+    saveAuthSession({ user_id: data.user_id, user_name: authName.value.trim() });
+    setAuthMessage('注册成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+function logout() {
+  if (state.sending) stopGeneration();
+  saveAuthSession(null);
+  setAuthMode('password');
+}
+
+function getMessageText(message) {
+  if (typeof message.content === 'string') return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content
+      .filter((item) => item.type === 'text')
+      .map((item) => item.text)
+      .join('\n');
+  }
+  return '';
+}
+
+function getMessageImage(message) {
+  return getMessageImages(message)[0] || '';
+}
+
+function getMessageImages(message) {
+  if (!Array.isArray(message.content)) return [];
+  return message.content
+    .filter((item) => item.type === 'image_url')
+    .map((item) => item.image_url?.url || '')
+    .filter(Boolean);
+}
+
+function stripMessageImages(message) {
+  if (!Array.isArray(message.content)) return message;
+  return {
+    ...message,
+    content: message.content.map((item) => {
+      if (item?.type !== 'image_url') return item;
+      return {
+        ...item,
+        image_url: {
+          ...(item.image_url || {}),
+          url: '',
+        },
+      };
+    }),
+  };
+}
+
+function prepareMessagesForStorage(messages) {
+  return messages.map(stripMessageImages);
+}
+
+function prepareMessagesForRequest(messages, currentMessage) {
+  return messages.map((message) => (message === currentMessage ? message : stripMessageImages(message)));
+}
+
+function sanitizeConversationForStorage(conversation) {
+  return {
+    ...conversation,
+    messages: prepareMessagesForStorage(conversation.messages || []),
+  };
+}
+
+function getConversationTitle(messages) {
+  const firstUser = messages.find((message) => message.role === 'user');
+  const text = firstUser ? getMessageText(firstUser).trim() : '';
+  if (text) return text.slice(0, 28);
+  if (firstUser && getMessageImage(firstUser)) return '车辆图片分析';
+  return '新对话';
+}
+
+function loadConversations() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    state.conversations = Array.isArray(data) ? data.map(sanitizeConversationForStorage) : [];
+  } catch (e) {
+    state.conversations = [];
+  }
+}
+
+function saveConversations() {
+  const sanitized = state.conversations.map(sanitizeConversationForStorage);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+    state.conversations = sanitized;
+  } catch (e) {
+    console.warn('Unable to persist conversation history.', e);
+  }
+}
+
+function upsertCurrentConversation() {
+  if (!state.messages.length) return;
+  const now = nowText();
+  if (!state.activeConversationId) {
+    state.activeConversationId = createId();
+  }
+
+  const existing = state.conversations.find((item) => item.id === state.activeConversationId);
+  const payload = {
+    id: state.activeConversationId,
+    title: getConversationTitle(state.messages),
+    updatedAt: now,
+    messages: prepareMessagesForStorage(state.messages),
+  };
+
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.conversations.unshift({ ...payload, createdAt: now });
+  }
+
+  state.conversations.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  saveConversations();
+  renderConversationList();
+}
+
+function renderConversationList() {
+  if (!state.conversations.length) {
+    conversationList.innerHTML = '<p class="empty-hint">暂无历史对话</p>';
     return;
   }
 
-  // ── 状态 ──────────────────────────────────────────────
-  const STORAGE_KEY = 'vehicle-chat-v3';
-  const state = {
-    conversations: [],
-    activeId: '',
-    messages: [],
-    imageBase64: '',
-    imageUrl: '',
-    sending: false,
-  };
+  conversationList.innerHTML = state.conversations.map((item) => {
+    const active = item.id === state.activeConversationId ? ' active' : '';
+    const preview = getConversationPreview(item.messages);
+    return `
+      <button class="conversation-item${active}" type="button" data-id="${item.id}">
+        <span class="conversation-title">${escapeHtml(item.title || '未命名对话')}</span>
+        <span class="conversation-preview">${escapeHtml(preview)}</span>
+        <span class="conversation-time">${escapeHtml(item.updatedAt || '')}</span>
+      </button>
+    `;
+  }).join('');
 
-  // ── 工具函数 ──────────────────────────────────────────
-  function uid() { return Date.now() + '-' + Math.random().toString(16).slice(2, 10); }
-  function now() { return new Date().toLocaleString('zh-CN', { hour12: false }); }
-
-  function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  function renderMD(text) {
-    if (!text) return '';
-    try {
-      if (typeof marked !== 'undefined' && marked.parse) return marked.parse(text);
-    } catch (_) {}
-    return '<pre style="white-space:pre-wrap;font-family:inherit;margin:0">' + esc(text) + '</pre>';
-  }
-
-  function msgText(m) {
-    if (typeof m.content === 'string') return m.content;
-    if (Array.isArray(m.content)) {
-      return m.content.filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('\n');
-    }
-    return '';
-  }
-
-  function msgImage(m) {
-    if (!Array.isArray(m.content)) return '';
-    var img = m.content.find(function (c) { return c.type === 'image_url'; });
-    return img ? img.image_url.url : '';
-  }
-
-  // ── 对话持久化 ────────────────────────────────────────
-  function loadConvs() {
-    try { state.conversations = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (_) { state.conversations = []; }
-  }
-  function saveConvs() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations)); } catch (_) {}
-  }
-
-  function upsertConv() {
-    if (!state.messages.length) return;
-    if (!state.activeId) state.activeId = uid();
-    var ts = now();
-    var firstUser = state.messages.find(function (m) { return m.role === 'user'; });
-    var title = firstUser ? msgText(firstUser).trim().slice(0, 24) : '新对话';
-    if (!title && firstUser && msgImage(firstUser)) title = '车辆图片分析';
-
-    var ex = state.conversations.find(function (c) { return c.id === state.activeId; });
-    var payload = { id: state.activeId, title: title, updatedAt: ts, messages: state.messages.slice() };
-    if (ex) Object.assign(ex, payload);
-    else state.conversations.unshift(Object.assign({}, payload, { createdAt: ts }));
-    state.conversations.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
-    saveConvs();
-    renderConvList();
-  }
-
-  function convPreview(msgs) {
-    var last = msgs.slice().reverse().find(function (m) { return m.role === 'assistant' && !m.loading; });
-    if (!last) return '';
-    return msgText(last).replace(/[#*`\n]/g, ' ').slice(0, 35);
-  }
-
-  function deleteConv(id, e) {
-    e.stopPropagation();
-    if (!confirm('确定删除此对话？')) return;
-    state.conversations = state.conversations.filter(function (c) { return c.id !== id; });
-    if (state.activeId === id) {
-      state.activeId = '';
-      state.messages = [];
-      chatMsgs.innerHTML = '';
-    }
-    saveConvs();
-    renderConvList();
-  }
-
-  function renderConvList() {
-    if (!state.conversations.length) {
-      convList.innerHTML = '<p class="empty-hint">暂无历史对话</p>';
-      return;
-    }
-    // 按更新时间降序
-    state.conversations.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
-    convList.innerHTML = state.conversations.map(function (c) {
-      var cls = c.id === state.activeId ? ' active' : '';
-      return '<div class="conversation-item' + cls + '" data-id="' + c.id + '">'
-        + '<div class="conv-main">'
-        + '<span class="conversation-title">' + esc(c.title || '未命名') + '</span>'
-        + '<span class="conversation-preview">' + esc(convPreview(c.messages)) + '</span>'
-        + '<span class="conversation-time">' + esc(c.updatedAt || '') + '</span>'
-        + '</div>'
-        + '<button class="conv-delete" data-del="' + c.id + '">×</button>'
-        + '</div>';
-    }).join('');
-    convList.querySelectorAll('.conversation-item').forEach(function (el) {
-      el.addEventListener('click', function (e) {
-        if (e.target.closest('.conv-delete')) return;
-        openConv(el.dataset.id);
-      });
+  conversationList.querySelectorAll('.conversation-item').forEach((item) => {
+    item.addEventListener('click', () => openConversation(item.dataset.id));
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      showConversationMenu(item.dataset.id, event.clientX, event.clientY);
     });
-    convList.querySelectorAll('.conv-delete').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        deleteConv(btn.dataset.del, e);
-      });
-    });
-  }
+  });
+}
 
-  function openConv(id) {
-    var c = state.conversations.find(function (c) { return c.id === id; });
-    if (!c) return;
-    if (state.activeId && state.messages.length) upsertConv();
-    state.activeId = c.id;
-    state.messages = (c.messages || []).slice();
-    state.imageBase64 = ''; state.imageUrl = '';
-    imageChip.hidden = true;
-    renderMessages();
-    renderConvList();
-  }
+function showConversationMenu(id, x, y) {
+  state.menuConversationId = id;
+  conversationMenu.hidden = false;
+  conversationMenu.style.left = `${x}px`;
+  conversationMenu.style.top = `${y}px`;
 
-  function newChat() {
-    if (state.messages.length) upsertConv();
-    state.activeId = uid();
+  const rect = conversationMenu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 8);
+  const top = Math.min(y, window.innerHeight - rect.height - 8);
+  conversationMenu.style.left = `${Math.max(8, left)}px`;
+  conversationMenu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideConversationMenu() {
+  conversationMenu.hidden = true;
+  state.menuConversationId = '';
+}
+
+function deleteConversation(id) {
+  if (!id || (state.sending && id === state.activeConversationId)) return;
+
+  state.conversations = state.conversations.filter((item) => item.id !== id);
+
+  if (state.activeConversationId === id) {
+    state.activeConversationId = '';
     state.messages = [];
-    state.imageBase64 = ''; state.imageUrl = '';
-    imageChip.hidden = true;
-    chatMsgs.innerHTML = '';
-    renderConvList();
-    chatInput.focus();
-  }
-
-  // ── 消息渲染 ──────────────────────────────────────────
-  function renderMessages() {
-    chatMsgs.innerHTML = state.messages.map(function (m) {
-      var cls = m.role === 'user' ? 'user' : 'assistant';
-      var avatar = m.role === 'user' ? 'U' : 'AI';
-      var body = '';
-      var img = msgImage(m);
-      if (img) body += '<img class="msg-image" src="' + img + '" alt="车辆图片">';
-      var text = msgText(m);
-      if (text && m.role === 'assistant') body += renderMD(text);
-      else if (text) body += esc(text);
-      if (m.tools && m.tools.length) {
-        body += m.tools.map(function (t) { return '<div class="msg-tool"><span class="tool-dot"></span>' + esc(t) + '</div>'; }).join('');
-      }
-      if (m.loading) body += '<div class="msg-loading"><span></span><span></span><span></span></div>';
-      return '<div class="message ' + cls + '"><div class="msg-avatar">' + avatar + '</div><div class="msg-content">' + body + '</div></div>';
-    }).join('');
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-  }
-
-  // ── 消息操作 ──────────────────────────────────────────
-  function pushUser(text, imgUrl) {
-    var parts = [{ type: 'text', text: text }];
-    if (imgUrl) parts.push({ type: 'image_url', image_url: { url: imgUrl } });
-    state.messages.push({ role: 'user', content: parts, ts: now() });
-    state.messages.push({ role: 'assistant', content: '', loading: true, ts: now() });
+    resetComposer();
     renderMessages();
   }
 
-  function finishBot(text, tools) {
-    state.messages = state.messages.filter(function (m) { return !m.loading; });
-    state.messages.push({ role: 'assistant', content: text || '（无内容）', tools: tools, ts: now() });
-    renderMessages();
-    upsertConv();
+  saveConversations();
+  renderConversationList();
+  hideConversationMenu();
+}
+
+function getConversationPreview(messages) {
+  const last = [...messages].reverse().find((message) => getMessageText(message).trim() || getMessageImage(message));
+  if (!last) return '暂无内容';
+  const text = getMessageText(last).trim();
+  if (text) return text.slice(0, 48);
+  return '图片消息';
+}
+
+function openConversation(id) {
+  const conversation = state.conversations.find((item) => item.id === id);
+  if (!conversation || state.sending) return;
+  state.activeConversationId = conversation.id;
+  state.messages = JSON.parse(JSON.stringify(conversation.messages || []));
+  resetComposer();
+  renderMessages();
+  renderConversationList();
+}
+
+function startNewConversation() {
+  if (state.sending) return;
+  state.activeConversationId = '';
+  state.messages = [];
+  resetComposer();
+  renderMessages();
+  renderConversationList();
+}
+
+function createBubble(role, options = {}) {
+  const row = document.createElement('article');
+  row.className = `message-row ${role}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  if (role === 'assistant') {
+    const steps = document.createElement('div');
+    steps.className = 'tool-steps';
+    steps.hidden = true;
+    bubble.appendChild(steps);
   }
 
-  var TOOL_LABELS = {
-    recognize_vehicle: '识别车型', detect_plate: '识别车牌', assess_condition: '检测车况',
-    query_vehicle_params: '查询参数', estimate_market_price: '市场估价',
-    query_plate_info: '查询车牌', check_violation: '违章查询', query_vehicle_history: '维保记录',
-    diagnose_damage: '损伤诊断', estimate_repair: '维修估算', recommend_insurance: '保险建议',
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  if (options.html) content.innerHTML = options.html;
+  if (options.text) content.textContent = options.text;
+  bubble.appendChild(content);
+
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  bubble.appendChild(actions);
+
+  row.appendChild(bubble);
+  chatMessages.appendChild(row);
+  scrollToBottom();
+
+  return {
+    row,
+    bubble,
+    content,
+    steps: bubble.querySelector('.tool-steps'),
+    actions,
   };
+}
 
-  function addToolStep(toolName) {
-    var label = TOOL_LABELS[toolName] || toolName;
-    var loading = state.messages.find(function (m) { return m.loading; });
-    if (loading) {
-      if (!loading.tools) loading.tools = [];
-      loading.tools.push(label);
-      renderMessages();
+function addUserBubble(message) {
+  const text = getMessageText(message);
+  const imageUrl = getMessageImage(message);
+  const parts = [];
+  if (imageUrl) parts.push(`<img class="message-image" src="${imageUrl}" alt="用户上传的车辆图片">`);
+  if (text) parts.push(`<div>${escapeHtml(text).replace(/\n/g, '<br>')}</div>`);
+  createBubble('user', { html: parts.join('') || '（空消息）' });
+}
+
+function addAssistantMessage(message) {
+  const bubble = createBubble('assistant');
+  setAssistantContent(bubble, getMessageText(message) || '已完成。');
+}
+
+function addUserBubbleWithImages(message) {
+  const text = getMessageText(message);
+  const imageUrls = getMessageImages(message);
+  const parts = [];
+
+  if (imageUrls.length) {
+    parts.push(`
+      <div class="message-image-grid">
+        ${imageUrls.map((imageUrl, index) => `<img class="message-image" src="${imageUrl}" alt="uploaded vehicle image ${index + 1}">`).join('')}
+      </div>
+    `);
+  }
+
+  if (text) parts.push(`<div>${escapeHtml(text).replace(/\n/g, '<br>')}</div>`);
+  createBubble('user', { html: parts.join('') || '(empty message)' });
+}
+
+function addAssistantBubble() {
+  return createBubble('assistant', {
+    html: '<span class="loading-dot"></span><span class="muted">正在思考...</span>'
+  });
+}
+
+function renderMessages() {
+  chatMessages.innerHTML = '';
+  if (!state.messages.length) {
+    createBubble('assistant', {
+      html: '你好，我可以回答车辆相关问题，也可以分析你上传的车辆图片。'
+    });
+    return;
+  }
+
+  state.messages.forEach((message) => {
+    if (message.role === 'user') addUserBubbleWithImages(message);
+    if (message.role === 'assistant') addAssistantMessage(message);
+  });
+}
+
+function addStep(aiBubble, data) {
+  if (!aiBubble.steps) return;
+  aiBubble.steps.hidden = false;
+  const item = document.createElement('div');
+  const ok = data.result === true;
+  item.className = `tool-step ${ok ? 'ok' : 'warn'}`;
+  const label = data.tool ? (TOOL_LABELS[data.tool] || data.tool) : (data.content || '处理中');
+  item.textContent = ok ? `${label}完成` : label;
+  aiBubble.steps.appendChild(item);
+  scrollToBottom();
+}
+
+function setAssistantContent(aiBubble, markdown, isError = false) {
+  aiBubble.content.classList.toggle('error-text', isError);
+  aiBubble.content.innerHTML = isError
+    ? `<strong>请求失败：</strong>${escapeHtml(markdown)}`
+    : renderMarkdown(markdown || '已完成。');
+  scrollToBottom();
+}
+
+function addRegenerateButton(aiBubble, userMessage) {
+  if (!aiBubble?.actions || !userMessage) return;
+  aiBubble.actions.innerHTML = '';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'regenerate-btn';
+  button.textContent = '重新生成';
+  button.addEventListener('click', () => regenerateResponse(userMessage, aiBubble));
+  aiBubble.actions.appendChild(button);
+  scrollToBottom();
+}
+
+function clearAssistantActions(aiBubble) {
+  if (aiBubble?.actions) aiBubble.actions.innerHTML = '';
+}
+
+function updateAiModeButton() {
+  btnAiMode.classList.toggle('active', state.aiMode);
+  btnAiMode.setAttribute('aria-pressed', String(state.aiMode));
+  btnAiMode.textContent = state.aiMode ? 'AI模式' : '普通识别';
+  btnAiMode.title = state.aiMode
+    ? 'AI模式已开启，点击切换为普通三模型识别'
+    : '普通三模型识别已开启，点击切换为AI模式';
+}
+
+function toggleAiMode() {
+  if (state.sending) return;
+  state.aiMode = !state.aiMode;
+  localStorage.setItem(AI_MODE_KEY, state.aiMode ? 'on' : 'off');
+  updateAiModeButton();
+}
+
+function scrollToBottom() {
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function autoResizeInput() {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = `${Math.min(chatInput.scrollHeight, 160)}px`;
+}
+
+function setSending(sending) {
+  state.sending = sending;
+  chatInput.disabled = sending;
+  btnSend.disabled = false;
+  btnAttach.disabled = sending;
+  btnRemoveImage.disabled = sending;
+  btnNewChat.disabled = sending;
+  btnClear.disabled = sending;
+  btnAiMode.disabled = sending;
+  btnSend.classList.toggle('stop-mode', sending);
+  btnSend.textContent = sending ? '停止' : '发送';
+  btnSend.title = sending ? '停止生成' : '发送消息';
+}
+
+function resetComposer() {
+  chatInput.value = '';
+  autoResizeInput();
+  clearSelectedImage();
+}
+
+async function readSSE(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      const dataLines = event
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => line.slice(6));
+      if (!dataLines.length) continue;
+      try {
+        onEvent(JSON.parse(dataLines.join('\n')));
+      } catch (e) {
+        console.warn('跳过无法解析的 SSE 事件', e);
+      }
     }
   }
+}
 
-  // ── 图片上传 ──────────────────────────────────────────
-  function clearImage() {
-    state.imageBase64 = ''; state.imageUrl = '';
-    imageChip.hidden = true;
-    imagePreview.src = '';
-    fileInput.value = '';
-  }
-
-  btnAttach.addEventListener('click', function () { fileInput.click(); });
-
-  fileInput.addEventListener('change', function () {
-    var file = fileInput.files[0];
-    if (!file) { clearImage(); return; }
-    if (!file.type.match(/^image\//)) { alert('请选择图片文件'); return; }
-    imageName.textContent = file.name;
-    var reader = new FileReader();
-    reader.onload = function (ev) {
-      state.imageUrl = ev.target.result;
-      state.imageBase64 = ev.target.result.split(',')[1] || '';
-      imagePreview.src = ev.target.result;
-      imageChip.hidden = false;
-    };
-    reader.onerror = function () { alert('图片读取失败，请重试'); };
+function readImageFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve({
+      name: file.name,
+      url: event.target.result,
+      base64: String(event.target.result).split(',')[1] || '',
+    });
     reader.readAsDataURL(file);
   });
+}
 
-  btnRemoveImg.addEventListener('click', function (e) {
-    e.stopPropagation();
-    clearImage();
+function processFiles(files) {
+  const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith('image/'));
+  if (!imageFiles.length) {
+    createBubble('assistant', { html: '<span class="error-text">Please upload image files.</span>' });
+    return;
+  }
+
+  Promise.all(imageFiles.map(readImageFile)).then((images) => {
+    state.selectedImages = images;
+    updateImageChip();
   });
+}
 
-  // ── 发送消息 ──────────────────────────────────────────
-  async function doSend() {
-    var text = chatInput.value.trim();
-    var hasImage = !!(state.imageBase64 && state.imageBase64.length > 50);
-    if (!text && !hasImage) return;
-    if (state.sending) return;
+function processFile(file) {
+  processFiles([file]);
+}
 
-    state.sending = true;
-    btnSend.disabled = true;
+function updateImageChip() {
+  imageChip.hidden = !state.selectedImages.length;
+  imagePreview.src = state.selectedImages[0]?.url || '';
+  imageName.textContent = state.selectedImages.length > 1
+    ? `${state.selectedImages.length} images selected`
+    : (state.selectedImages[0]?.name || 'Vehicle image');
+}
 
-    var imgUrl = state.imageUrl;
-    var imgB64 = state.imageBase64;
-    var queryText = text || (hasImage ? '帮我识别这辆车，生成完整档案' : '');
-    pushUser(queryText, imgUrl);
-    clearImage();
-    chatInput.value = '';
-    chatInput.style.height = 'auto';
+function clearSelectedImage() {
+  state.selectedImages = [];
+  fileInput.value = '';
+  updateImageChip();
+}
 
-    try {
-      var response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imgB64, query: queryText }),
-      });
+function buildUserMessage(text) {
+  if (state.selectedImages.length) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: text || 'Please compare these vehicle images.' },
+        ...state.selectedImages.map((image) => ({ type: 'image_url', image_url: { url: image.url } }))
+      ]
+    };
+  }
+  return { role: 'user', content: text };
+}
 
-      if (!response.ok) {
-        finishBot('请求失败 (HTTP ' + response.status + ')', []);
-        return;
-      }
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!state.user) {
+    updateAuthView();
+    setAuthMessage('请先登录后再使用车辆档案助手', 'error');
+    return;
+  }
+  if (state.sending || (!text && !state.selectedImages.length)) return;
 
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = '', report = '';
+  const message = buildUserMessage(text);
+  state.messages.push(message);
+  addUserBubbleWithImages(message);
+  upsertCurrentConversation();
 
-      while (true) {
-        var chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        var lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim();
-          if (!line.startsWith('data: ')) continue;
-          try {
-            var data = JSON.parse(line.slice(6));
-            if (data.type === 'step' && data.tool) addToolStep(data.tool);
-            if (data.type === 'report') report = data.content || '';
-            if (data.type === 'error') report = '分析失败：' + (data.message || '未知错误');
-          } catch (_) {}
-        }
-      }
-      finishBot(report || '分析完成', []);
-    } catch (e) {
-      finishBot('请求失败：' + (e.message || '网络错误'), []);
-    } finally {
-      state.sending = false;
-      btnSend.disabled = false;
-      chatInput.focus();
+  await requestAssistantResponse(message);
+}
+
+async function requestAssistantResponse(message, existingAiBubble = null) {
+  const aiBubble = addAssistantBubble();
+  if (existingAiBubble) existingAiBubble.row.remove();
+  clearAssistantActions(aiBubble);
+
+  const controller = new AbortController();
+  state.abortController = controller;
+  state.currentAiBubble = aiBubble;
+  state.currentUserMessage = message;
+  state.currentFinalContent = '';
+  setSending(true);
+
+  try {
+    let finalContent = '';
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: prepareMessagesForRequest(state.messages, message),
+        useAI: state.aiMode,
+        user: state.user,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error?.message || `Request failed: ${response.status}`);
     }
+
+    await readSSE(response, (data) => {
+      if (data.type === 'step') addStep(aiBubble, data);
+      if (['message', 'report', 'text'].includes(data.type)) {
+        finalContent = data.content || data.text || '';
+        state.currentFinalContent = finalContent;
+        setAssistantContent(aiBubble, finalContent);
+      }
+      if (data.type === 'error') {
+        finalContent = '';
+        state.currentFinalContent = '';
+        setAssistantContent(aiBubble, data.message || 'Unknown error', true);
+      }
+      if (data.type === 'done') {
+        setSending(false);
+      }
+    });
+
+    if (finalContent) {
+      state.messages.push({ role: 'assistant', content: finalContent });
+      upsertCurrentConversation();
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      setAssistantContent(aiBubble, e.message, true);
+    }
+  } finally {
+    setSending(false);
+    state.abortController = null;
+    state.currentAiBubble = null;
+    state.currentUserMessage = null;
+    state.currentFinalContent = '';
+    resetComposer();
+  }
+}
+
+function stopGeneration() {
+  if (!state.sending) return;
+
+  state.abortController?.abort();
+
+  if (state.currentAiBubble) {
+    if (state.currentFinalContent) {
+      setAssistantContent(state.currentAiBubble, state.currentFinalContent);
+    } else {
+      setAssistantContent(state.currentAiBubble, '已停止生成。');
+    }
+    addRegenerateButton(state.currentAiBubble, state.currentUserMessage);
   }
 
-  btnSend.addEventListener('click', doSend);
-  chatInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
-  });
+  setSending(false);
+}
 
-  btnNewChat.addEventListener('click', newChat);
-  btnClear.addEventListener('click', function () {
-    if (!state.messages.length || !confirm('确定清空当前对话？')) return;
-    state.messages = [];
-    renderMessages();
-    upsertConv();
-  });
+function regenerateResponse(userMessage, aiBubble) {
+  if (state.sending) return;
 
-  // ── 初始化 ────────────────────────────────────────────
-  loadConvs();
-  if (state.conversations.length) {
-    openConv(state.conversations[0].id);
-  } else {
-    newChat();
+  while (state.messages.length && state.messages[state.messages.length - 1].role === 'assistant') {
+    state.messages.pop();
   }
-  chatInput.focus();
 
-})();
+  requestAssistantResponse(userMessage, aiBubble);
+}
+
+btnAttach.addEventListener('click', () => fileInput.click());
+authTabs.forEach((tab) => {
+  tab.addEventListener('click', () => setAuthMode(tab.dataset.authMode));
+});
+authPasswordForm.addEventListener('submit', loginWithPassword);
+btnFaceLogin.addEventListener('click', loginWithFace);
+btnRegister.addEventListener('click', registerWithFace);
+btnLogout.addEventListener('click', logout);
+btnAiMode.addEventListener('click', toggleAiMode);
+btnRemoveImage.addEventListener('click', clearSelectedImage);
+btnSend.addEventListener('click', () => {
+  if (state.sending) {
+    stopGeneration();
+    return;
+  }
+
+  sendMessage();
+});
+btnNewChat.addEventListener('click', startNewConversation);
+btnClear.addEventListener('click', startNewConversation);
+
+conversationMenu.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-action="delete"]');
+  if (!button) return;
+  deleteConversation(state.menuConversationId);
+});
+
+document.addEventListener('click', (event) => {
+  if (!conversationMenu.hidden && !conversationMenu.contains(event.target)) {
+    hideConversationMenu();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') hideConversationMenu();
+});
+
+window.addEventListener('resize', hideConversationMenu);
+window.addEventListener('scroll', hideConversationMenu, true);
+
+fileInput.addEventListener('change', (event) => {
+  processFiles(event.target.files);
+});
+
+chatInput.addEventListener('input', autoResizeInput);
+chatInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage();
+  }
+});
+
+chatMessages.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  chatMessages.classList.add('drag-over');
+});
+
+chatMessages.addEventListener('dragleave', () => {
+  chatMessages.classList.remove('drag-over');
+});
+
+chatMessages.addEventListener('drop', (event) => {
+  event.preventDefault();
+  chatMessages.classList.remove('drag-over');
+  processFiles(event.dataTransfer.files);
+});
+
+loadConversations();
+renderConversationList();
+renderMessages();
+updateAiModeButton();
+updateAuthView();
+autoResizeInput();

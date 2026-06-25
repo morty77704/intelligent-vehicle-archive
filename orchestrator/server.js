@@ -342,6 +342,96 @@ app.delete('/api/archive/:id', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// ── /api/chat (兼容前端新接口) ───────────────────────────
+app.post('/api/chat', async (req, res) => {
+  const { messages, useAI, user } = req.body;
+  // 从 messages 中提取最后一条用户消息的文本和图片
+  const lastMsg = (messages || []).slice().reverse().find(m => m.role === 'user');
+  let query = '';
+  let image = '';
+
+  if (lastMsg) {
+    if (typeof lastMsg.content === 'string') {
+      query = lastMsg.content;
+    } else if (Array.isArray(lastMsg.content)) {
+      for (const part of lastMsg.content) {
+        if (part.type === 'text') query = part.text;
+        if (part.type === 'image_url' && part.image_url?.url) {
+          const url = part.image_url.url;
+          image = url.includes('base64,') ? url.split('base64,')[1] : url;
+        }
+      }
+    }
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+
+  try {
+    let report;
+    if (image && image.length > 100) {
+      res.write(`data: ${JSON.stringify({ type: 'step', content: '正在识别车辆信息...' })}\n\n`);
+      const inferenceResults = await runInferencePhase(image, res);
+      if (useAI !== false) {
+        report = await chatWithLLM(inferenceResults, res);
+      } else {
+        report = JSON.stringify(inferenceResults, null, 2);
+      }
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'step', content: '思考中...' })}\n\n`);
+      report = await chatTextOnly(query || '你好', res);
+    }
+
+    if (report) {
+      dbRun('INSERT INTO archives (image_path, full_report) VALUES (?, ?)', ['', report]);
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'message', content: report })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+  } catch (e) {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: e.message })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+// ── Auth 代理 (转发到 8004) ──────────────────────────────
+const AUTH_URL = process.env.AUTH_URL || 'http://localhost:8004';
+app.post('/api/auth/:action', async (req, res) => {
+  try {
+    const url = `${AUTH_URL}/api/auth/${req.params.action}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(15000)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (e) {
+    res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` });
+  }
+});
+app.post('/api/auth/:action1/:action2', async (req, res) => {
+  try {
+    const url = `${AUTH_URL}/api/auth/${req.params.action1}/${req.params.action2}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(15000)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (e) {
+    res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` });
+  }
+});
+
 // ── 启动 ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 8000;
 initDB().then(() => {
