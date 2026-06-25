@@ -399,37 +399,34 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ── Auth 代理 (转发到 8004) ──────────────────────────────
+// ── Auth 代理 (转发 POST /api/auth/* → 8004) ──────────────
 const AUTH_URL = process.env.AUTH_URL || 'http://localhost:8004';
-app.post('/api/auth/:action', async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   try {
-    const url = `${AUTH_URL}/api/auth/${req.params.action}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-      signal: AbortSignal.timeout(15000)
+    const r = await fetch(`${AUTH_URL}/api/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body), signal: AbortSignal.timeout(15000)
     });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (e) {
-    res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` });
-  }
+    const data = await r.json(); res.status(r.status).json(data);
+  } catch (e) { res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` }); }
 });
-app.post('/api/auth/:action1/:action2', async (req, res) => {
+app.post('/api/auth/login/password', async (req, res) => {
   try {
-    const url = `${AUTH_URL}/api/auth/${req.params.action1}/${req.params.action2}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-      signal: AbortSignal.timeout(15000)
+    const r = await fetch(`${AUTH_URL}/api/auth/login/password`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body), signal: AbortSignal.timeout(15000)
     });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (e) {
-    res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` });
-  }
+    const data = await r.json(); res.status(r.status).json(data);
+  } catch (e) { res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` }); }
+});
+app.post('/api/auth/login/face', async (req, res) => {
+  try {
+    const r = await fetch(`${AUTH_URL}/api/auth/login/face`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body), signal: AbortSignal.timeout(15000)
+    });
+    const data = await r.json(); res.status(r.status).json(data);
+  } catch (e) { res.status(502).json({ status: 500, msg: `认证服务不可用: ${e.message}` }); }
 });
 
 // ── 启动 ──────────────────────────────────────────────────
