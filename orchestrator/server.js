@@ -101,6 +101,7 @@ const BAILIAN_API_KEY = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API
 const BAILIAN_BASE_URL = process.env.DASHSCOPE_BASE_URL || process.env.BAILIAN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const BAILIAN_MODEL = process.env.BAILIAN_MODEL || process.env.DASHSCOPE_MODEL || 'qwen3-vl-plus';
 const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS || 15000);
+const AUTH_AGENT_URL = process.env.AUTH_AGENT_URL || 'http://127.0.0.1:8004';
 
 const SYSTEM_PROMPT = `你是智能车辆档案系统助手。你可以使用工具来识别车辆信息。
 
@@ -143,6 +144,24 @@ async function executeTool(name, args) {
     return await res.json();
   } catch (e) {
     return { error: `调用 ${name} 失败: ${e.message}` };
+  }
+}
+
+async function forwardAuthRequest(req, res, pathSuffix) {
+  try {
+    const authRes = await fetch(`${AUTH_AGENT_URL}/api/auth/${pathSuffix}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+      signal: AbortSignal.timeout(AGENT_TIMEOUT_MS)
+    });
+    const data = await authRes.json().catch(() => ({}));
+    res.status(authRes.ok ? 200 : authRes.status).json(data);
+  } catch (e) {
+    res.status(502).json({
+      status: 502,
+      msg: `认证服务不可用: ${e.message}`,
+    });
   }
 }
 
@@ -488,6 +507,24 @@ async function chatWithTools(messages, res) {
 }
 
 // ── 主入口 ────────────────────────────────────────────────
+app.post('/api/auth/register', (req, res) => forwardAuthRequest(req, res, 'register'));
+app.post('/api/auth/login/password', (req, res) => forwardAuthRequest(req, res, 'login/password'));
+app.post('/api/auth/login/face', (req, res) => forwardAuthRequest(req, res, 'login/face'));
+app.get('/api/auth/health', async (req, res) => {
+  try {
+    const authRes = await fetch(`${AUTH_AGENT_URL}/api/auth/health`, {
+      signal: AbortSignal.timeout(AGENT_TIMEOUT_MS)
+    });
+    const data = await authRes.json().catch(() => ({}));
+    res.status(authRes.ok ? 200 : authRes.status).json(data);
+  } catch (e) {
+    res.status(502).json({
+      status: 502,
+      msg: `认证服务不可用: ${e.message}`,
+    });
+  }
+});
+
 app.post('/api/chat', async (req, res) => {
   const { messages, useAI = true } = req.body;
   if (!Array.isArray(messages) || messages.length === 0) {

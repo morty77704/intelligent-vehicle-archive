@@ -9,6 +9,59 @@
   <script src="app.js" defer></script>
 </head>
 <body>
+  <section class="auth-gate" id="authGate" aria-label="登录">
+    <div class="auth-panel">
+      <div class="auth-heading">
+        <h1>智能车辆档案助手</h1>
+        <p>登录后进入车辆档案工作台</p>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="登录方式">
+        <button id="authPasswordTab" type="button" class="auth-tab active" data-auth-mode="password">账密登录</button>
+        <button id="authFaceTab" type="button" class="auth-tab" data-auth-mode="face">人脸登录</button>
+        <button id="authRegisterTab" type="button" class="auth-tab" data-auth-mode="register">注册</button>
+      </div>
+
+      <form id="authPasswordForm" class="auth-form">
+        <label>
+          <span>手机号</span>
+          <input id="authPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="13800138000" maxlength="11">
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="请输入密码">
+        </label>
+        <button id="btnPasswordLogin" type="submit" class="send-btn auth-submit">登录</button>
+      </form>
+
+      <form id="authFaceForm" class="auth-form" hidden>
+        <button id="btnFaceLogin" type="button" class="send-btn auth-submit">拍照登录</button>
+      </form>
+
+      <form id="authRegisterForm" class="auth-form" hidden>
+        <label>
+          <span>姓名</span>
+          <input id="authName" type="text" autocomplete="name" placeholder="张三">
+        </label>
+        <label>
+          <span>年龄</span>
+          <input id="authAge" type="number" inputmode="numeric" min="1" max="120" placeholder="25">
+        </label>
+        <label>
+          <span>手机号</span>
+          <input id="authRegisterPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="13800138000" maxlength="11">
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="authRegisterPassword" type="password" autocomplete="new-password" placeholder="请设置密码">
+        </label>
+        <button id="btnRegister" type="button" class="send-btn auth-submit">采集人脸并注册</button>
+      </form>
+
+      <p id="authMessage" class="auth-message" aria-live="polite"></p>
+    </div>
+  </section>
+
   <main class="app-shell">
     <aside class="conversation-sidebar" aria-label="对话历史">
       <div class="sidebar-header">
@@ -26,7 +79,11 @@
           <h1>智能车辆档案助手</h1>
           <p>输入车辆问题，或上传车辆照片进行识别分析</p>
         </div>
-        <button id="btnClear" type="button" class="ghost-btn">清空</button>
+        <div class="header-actions">
+          <span id="currentUser" class="current-user" hidden></span>
+          <button id="btnLogout" type="button" class="ghost-btn" hidden>退出</button>
+          <button id="btnClear" type="button" class="ghost-btn">清空</button>
+        </div>
       </section>
 
       <section class="chat-messages" id="chatMessages" aria-live="polite"></section>
@@ -43,7 +100,7 @@
 
         <div class="composer-row">
           <button id="btnAttach" type="button" class="icon-btn" aria-label="上传图片" title="上传图片">+</button>
-          <input id="fileInput" type="file" accept="image/*" capture="environment" hidden>
+          <input id="fileInput" type="file" accept="image/*" multiple hidden>
           <textarea id="chatInput" rows="1" placeholder="输入车辆问题，或上传照片..." aria-label="消息内容"></textarea>
           <button id="btnSend" type="button" class="send-btn">发送</button>
         </div>

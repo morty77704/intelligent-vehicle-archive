@@ -21,6 +21,7 @@ agent-c/model/weights/*
 data/
 agent-b/data/
 archive/
+auth/faces/
 
 # Node
 node_modules/

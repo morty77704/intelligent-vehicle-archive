@@ -52,10 +52,12 @@ $processes = @()
 $processes += Start-DemoProcess "agent-a" "python" @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8001") (Join-Path $root "agent-a")
 $processes += Start-DemoProcess "agent-b" "python" @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8002") (Join-Path $root "agent-b")
 $processes += Start-DemoProcess "agent-c" "python" @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8003") (Join-Path $root "agent-c")
+$processes += Start-DemoProcess "auth" "python" @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8004") (Join-Path $root "auth")
 
 Wait-Health "Agent A" "http://127.0.0.1:8001/api/vehicle/health"
 Wait-Health "Agent B" "http://127.0.0.1:8002/api/plate/health"
 Wait-Health "Agent C" "http://127.0.0.1:8003/api/damage/health"
+Wait-Health "Auth" "http://127.0.0.1:8004/api/auth/health"
 
 $orchestratorDir = Join-Path $root "orchestrator"
 if (-not (Test-Path (Join-Path $orchestratorDir "node_modules"))) {

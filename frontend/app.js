@@ -10,9 +10,26 @@ const imageChip = document.getElementById('imageChip');
 const imagePreview = document.getElementById('imagePreview');
 const imageName = document.getElementById('imageName');
 const conversationList = document.getElementById('conversationList');
+const authGate = document.getElementById('authGate');
+const authTabs = document.querySelectorAll('.auth-tab');
+const authPasswordForm = document.getElementById('authPasswordForm');
+const authFaceForm = document.getElementById('authFaceForm');
+const authRegisterForm = document.getElementById('authRegisterForm');
+const authMessage = document.getElementById('authMessage');
+const authPhone = document.getElementById('authPhone');
+const authPassword = document.getElementById('authPassword');
+const authName = document.getElementById('authName');
+const authAge = document.getElementById('authAge');
+const authRegisterPhone = document.getElementById('authRegisterPhone');
+const authRegisterPassword = document.getElementById('authRegisterPassword');
+const btnFaceLogin = document.getElementById('btnFaceLogin');
+const btnRegister = document.getElementById('btnRegister');
+const btnLogout = document.getElementById('btnLogout');
+const currentUser = document.getElementById('currentUser');
 
 const STORAGE_KEY = 'vehicle-chat-conversations-v1';
 const AI_MODE_KEY = 'vehicle-chat-ai-mode-v1';
+const AUTH_SESSION_KEY = 'vehicle-auth-session-v1';
 
 const conversationMenu = document.createElement('div');
 conversationMenu.className = 'conversation-menu';
@@ -44,6 +61,7 @@ const state = {
   currentFinalContent: '',
   menuConversationId: '',
   aiMode: localStorage.getItem(AI_MODE_KEY) !== 'off',
+  user: loadAuthSession(),
 };
 
 const TOOL_LABELS = {
@@ -81,6 +99,149 @@ function nowText() {
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadAuthSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
+    if (session && session.user_id && session.user_name) return session;
+  } catch (e) {
+    // Ignore invalid persisted sessions.
+  }
+  return null;
+}
+
+function saveAuthSession(user) {
+  state.user = user;
+  if (user) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+  else localStorage.removeItem(AUTH_SESSION_KEY);
+  updateAuthView();
+}
+
+function updateAuthView() {
+  const loggedIn = !!state.user;
+  if (authGate) authGate.hidden = loggedIn;
+  if (currentUser) {
+    currentUser.hidden = !loggedIn;
+    currentUser.textContent = loggedIn ? `当前用户：${state.user.user_name}` : '';
+  }
+  if (btnLogout) btnLogout.hidden = !loggedIn;
+  if (loggedIn) chatInput.focus();
+}
+
+function setAuthMode(mode) {
+  authTabs.forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.authMode === mode);
+  });
+  authPasswordForm.hidden = mode !== 'password';
+  authFaceForm.hidden = mode !== 'face';
+  authRegisterForm.hidden = mode !== 'register';
+  setAuthMessage('');
+}
+
+function setAuthMessage(message, type = '') {
+  authMessage.textContent = message || '';
+  authMessage.className = `auth-message ${type}`.trim();
+}
+
+function setAuthBusy(busy) {
+  authTabs.forEach((tab) => { tab.disabled = busy; });
+  authPasswordForm.querySelectorAll('input, button').forEach((item) => { item.disabled = busy; });
+  authFaceForm.querySelectorAll('button').forEach((item) => { item.disabled = busy; });
+  authRegisterForm.querySelectorAll('input, button').forEach((item) => { item.disabled = busy; });
+}
+
+function readFaceImage() {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'user';
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) {
+        reject(new Error('未选择人脸图片'));
+        return;
+      }
+      const image = await readImageFile(file);
+      resolve(image.url);
+    }, { once: true });
+    input.click();
+  });
+}
+
+async function requestAuth(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.msg || data.error?.message || `认证服务错误：${response.status}`);
+  if (data.status !== 200) throw new Error(data.msg || '认证失败');
+  return data;
+}
+
+async function loginWithPassword(event) {
+  event.preventDefault();
+  setAuthBusy(true);
+  setAuthMessage('正在登录...');
+  try {
+    const data = await requestAuth('/api/auth/login/password', {
+      phone: authPhone.value.trim(),
+      password: authPassword.value,
+    });
+    saveAuthSession({ user_id: data.user_id, user_name: data.user_name });
+    setAuthMessage('登录成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function loginWithFace() {
+  setAuthBusy(true);
+  setAuthMessage('请选择或拍摄人脸图片...');
+  try {
+    const image = await readFaceImage();
+    setAuthMessage('正在识别人脸...');
+    const data = await requestAuth('/api/auth/login/face', { image });
+    saveAuthSession({ user_id: data.user_id, user_name: data.user_name });
+    setAuthMessage('登录成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function registerWithFace() {
+  setAuthBusy(true);
+  setAuthMessage('请选择或拍摄人脸图片...');
+  try {
+    const image = await readFaceImage();
+    setAuthMessage('正在注册...');
+    const data = await requestAuth('/api/auth/register', {
+      image,
+      name: authName.value.trim(),
+      age: authAge.value.trim(),
+      phone: authRegisterPhone.value.trim(),
+      password: authRegisterPassword.value,
+    });
+    saveAuthSession({ user_id: data.user_id, user_name: authName.value.trim() });
+    setAuthMessage('注册成功', 'ok');
+  } catch (e) {
+    setAuthMessage(e.message, 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+function logout() {
+  if (state.sending) stopGeneration();
+  saveAuthSession(null);
+  setAuthMode('password');
 }
 
 function getMessageText(message) {
@@ -537,6 +698,11 @@ function buildUserMessage(text) {
 
 async function sendMessage() {
   const text = chatInput.value.trim();
+  if (!state.user) {
+    updateAuthView();
+    setAuthMessage('请先登录后再使用车辆档案助手', 'error');
+    return;
+  }
   if (state.sending || (!text && !state.selectedImages.length)) return;
 
   const message = buildUserMessage(text);
@@ -567,6 +733,7 @@ async function requestAssistantResponse(message, existingAiBubble = null) {
       body: JSON.stringify({
         messages: prepareMessagesForRequest(state.messages, message),
         useAI: state.aiMode,
+        user: state.user,
       }),
       signal: controller.signal,
     });
@@ -639,6 +806,13 @@ function regenerateResponse(userMessage, aiBubble) {
 }
 
 btnAttach.addEventListener('click', () => fileInput.click());
+authTabs.forEach((tab) => {
+  tab.addEventListener('click', () => setAuthMode(tab.dataset.authMode));
+});
+authPasswordForm.addEventListener('submit', loginWithPassword);
+btnFaceLogin.addEventListener('click', loginWithFace);
+btnRegister.addEventListener('click', registerWithFace);
+btnLogout.addEventListener('click', logout);
 btnAiMode.addEventListener('click', toggleAiMode);
 btnRemoveImage.addEventListener('click', clearSelectedImage);
 btnSend.addEventListener('click', () => {
@@ -702,4 +876,5 @@ loadConversations();
 renderConversationList();
 renderMessages();
 updateAiModeButton();
+updateAuthView();
 autoResizeInput();

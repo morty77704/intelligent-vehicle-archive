@@ -19,14 +19,134 @@ button, textarea {
   font: inherit;
 }
 
+input {
+  font: inherit;
+}
+
 button {
   cursor: pointer;
 }
 
 button:disabled,
-textarea:disabled {
+textarea:disabled,
+input:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(238, 241, 244, 0.94);
+  backdrop-filter: blur(6px);
+}
+
+.auth-gate[hidden] {
+  display: none;
+}
+
+.auth-panel {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 44px rgba(36, 45, 60, 0.14);
+}
+
+.auth-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  color: #111827;
+}
+
+.auth-heading p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 14px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 18px 0 16px;
+  padding: 4px;
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.auth-tab {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  font-size: 14px;
+}
+
+.auth-tab.active {
+  background: #ffffff;
+  color: #1f6feb;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form[hidden] {
+  display: none;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #111827;
+  background: #ffffff;
+  outline: none;
+}
+
+.auth-form input:focus {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.14);
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.auth-message {
+  min-height: 22px;
+  margin: 12px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.auth-message.error {
+  color: #b42318;
+}
+
+.auth-message.ok {
+  color: #047857;
 }
 
 .app-shell {
@@ -156,6 +276,32 @@ textarea:disabled {
   margin: 6px 0 0;
   color: #667085;
   font-size: 14px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.current-user {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border: 1px solid #d8dde5;
+  border-radius: 999px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.current-user[hidden],
+#btnLogout[hidden] {
+  display: none;
 }
 
 .chat-messages {
