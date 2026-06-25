@@ -8,6 +8,27 @@ const fs = require('fs');
 const path = require('path');
 const { AGENT_URLS, ALL_TOOLS, TOOL_ROUTES } = require('./tools-registry');
 
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (process.env[key]) continue;
+
+    process.env[key] = rawValue.trim().replace(/^['"]|['"]$/g, '');
+  }
+}
+
+loadEnvFile(path.join(__dirname, '..', '.env'));
+loadEnvFile(path.join(__dirname, '.env'));
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -277,6 +298,29 @@ async function runLocalAnalysis(image, res) {
   });
 }
 
+async function runLocalComparison(images, res) {
+  if (images.length === 1) return runLocalAnalysis(images[0], res);
+
+  const reports = [];
+  for (const [index, image] of images.entries()) {
+    res.write(`data: ${JSON.stringify({ type: 'step', content: `Analyzing image ${index + 1}/${images.length}` })}\n\n`);
+    const report = await runLocalAnalysis(image, res);
+    reports.push(`### Image ${index + 1}\n\n${report}`);
+  }
+
+  return [
+    '## Multi-image vehicle comparison',
+    '',
+    `Compared ${images.length} uploaded vehicle images. In local demo mode, each image is analyzed independently with the available vehicle, plate, and condition tools.`,
+    '',
+    ...reports,
+    '',
+    '### Comparison note',
+    '- Review the vehicle model, plate, confidence, visible damage, repair estimate, and insurance suggestion in each image section.',
+    '- For deeper visual side-by-side reasoning across all images, configure a multimodal model key such as `DASHSCOPE_API_KEY` / `BAILIAN_API_KEY` so the model can inspect the images together.',
+  ].join('\n');
+}
+
 // ── DeepSeek 对话循环 ─────────────────────────────────────
 const CHAT_SYSTEM_PROMPT = `你是智能车辆档案系统助手，可以处理两类请求。
 
@@ -315,10 +359,17 @@ function getLastUserText(messages) {
 }
 
 function getLastUserImage(messages) {
+  return getLastUserImages(messages)[0] || '';
+}
+
+function getLastUserImages(messages) {
   const lastUser = getLastUserMessage(messages);
-  if (!lastUser || !Array.isArray(lastUser.content)) return '';
-  const imageUrl = lastUser.content.find((item) => item?.type === 'image_url')?.image_url?.url || '';
-  return imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
+  if (!lastUser || !Array.isArray(lastUser.content)) return [];
+  return lastUser.content
+    .filter((item) => item?.type === 'image_url')
+    .map((item) => item.image_url?.url || '')
+    .filter(Boolean)
+    .map((imageUrl) => (imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl));
 }
 
 function buildLocalTextReply(text) {
@@ -328,9 +379,9 @@ function buildLocalTextReply(text) {
     '',
     `你刚才问的是：${question}`,
     '',
-    '当前未配置 `DEEPSEEK_API_KEY`，所以文字智能问答会使用本地演示模式。',
+    '当前未配置 `DASHSCOPE_API_KEY` / `BAILIAN_API_KEY` 或 `DEEPSEEK_API_KEY`，所以文字智能问答会使用本地演示模式。',
     '',
-    '你可以继续上传车辆图片，我会调用本地 Agent 完成车型、车牌和车况分析；如果需要真实开放式问答，请配置 DeepSeek API Key 后重启 orchestrator。'
+    '你可以继续上传车辆图片，我会调用本地 Agent 完成车型、车牌和车况分析；如果需要真实开放式问答，请配置百炼或 DeepSeek API Key 后重启 orchestrator。'
   ].join('\n');
 }
 
@@ -368,8 +419,8 @@ async function chatWithTools(messages, res) {
   }
 
   if (!DEEPSEEK_API_KEY) {
-    const image = getLastUserImage(messages);
-    if (image) return runLocalAnalysis(image, res);
+    const images = getLastUserImages(messages);
+    if (images.length) return runLocalComparison(images, res);
     return buildLocalTextReply(getLastUserText(messages));
   }
 
@@ -438,7 +489,7 @@ async function chatWithTools(messages, res) {
 
 // ── 主入口 ────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
-  const { messages } = req.body;
+  const { messages, useAI = true } = req.body;
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({
       error: { code: 'NO_MESSAGES', message: '请提供消息历史' }
@@ -452,8 +503,26 @@ app.post('/api/chat', async (req, res) => {
   });
 
   try {
-    const reply = await chatWithTools(messages, res);
-    const isImageRequest = !!getLastUserImage(messages);
+    const isImageRequest = getLastUserImages(messages).length > 0;
+    let reply;
+
+    if (useAI === false) {
+      if (!isImageRequest) {
+        reply = [
+          '## 普通识别模式',
+          '',
+          '普通识别模式会直接调用车辆、车牌、车况三个本地权重模型，不经过 AI 问答模型。',
+          '',
+          '请上传车辆图片后再发送，我会输出三模型识别结果和结构化车辆档案。'
+        ].join('\n');
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'step', content: '普通识别模式：正在调用三模型识别...' })}\n\n`);
+        reply = await runLocalComparison(getLastUserImages(messages), res);
+      }
+    } else {
+      reply = await chatWithTools(messages, res);
+    }
+
     if (isImageRequest && reply) {
       saveArchive(reply);
     }

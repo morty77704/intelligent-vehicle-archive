@@ -4,6 +4,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -30,12 +31,13 @@ textarea:disabled {
 
 .app-shell {
   width: min(1180px, 100%);
-  min-height: 100vh;
+  height: 100vh;
   margin: 0 auto;
   padding: 20px;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 14px;
+  overflow: hidden;
 }
 
 .conversation-sidebar,
@@ -48,11 +50,13 @@ textarea:disabled {
 }
 
 .conversation-sidebar {
-  min-height: calc(100vh - 40px);
+  height: calc(100vh - 40px);
+  min-height: 0;
   padding: 14px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -124,10 +128,12 @@ textarea:disabled {
 
 .chat-shell {
   min-width: 0;
-  min-height: calc(100vh - 40px);
+  height: calc(100vh - 40px);
+  min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(360px, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -153,9 +159,10 @@ textarea:disabled {
 }
 
 .chat-messages {
-  min-height: 360px;
+  min-height: 0;
   padding: 18px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: #f8fafc;
   border: 1px solid #d8dde5;
   border-radius: 8px;
@@ -207,6 +214,13 @@ textarea:disabled {
   margin-bottom: 0;
 }
 
+.message-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .message-content h2 {
   font-size: 18px;
   margin: 12px 0 8px;
@@ -247,6 +261,21 @@ textarea:disabled {
   object-fit: cover;
   border-radius: 6px;
   margin-bottom: 8px;
+}
+
+.message-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  max-width: 440px;
+  margin-bottom: 8px;
+}
+
+.message-image-grid .message-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: none;
+  margin-bottom: 0;
 }
 
 .tool-steps {
@@ -307,7 +336,7 @@ textarea:disabled {
 
 .composer-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 42px auto minmax(0, 1fr) auto;
   align-items: end;
   gap: 10px;
 }
@@ -331,6 +360,7 @@ textarea:disabled {
 }
 
 .icon-btn,
+.mode-toggle,
 .send-btn,
 .ghost-btn {
   min-height: 38px;
@@ -354,6 +384,47 @@ textarea:disabled {
   background: #1f6feb;
   color: #ffffff;
   white-space: nowrap;
+}
+
+.mode-toggle {
+  height: 42px;
+  padding: 0 12px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.mode-toggle.active {
+  border-color: #1f6feb;
+  color: #1f6feb;
+  background: #eff6ff;
+}
+
+.mode-toggle:not(.active) {
+  border-color: #16a34a;
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.send-btn.stop-mode {
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.regenerate-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #273142;
+  font-size: 13px;
+}
+
+.regenerate-btn:hover {
+  border-color: #1f6feb;
+  color: #1f6feb;
 }
 
 .ghost-btn {
@@ -409,16 +480,49 @@ textarea:disabled {
   font-size: 14px;
 }
 
+.conversation-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 96px;
+  padding: 6px;
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
+.conversation-menu[hidden] {
+  display: none;
+}
+
+.conversation-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #b42318;
+  text-align: left;
+}
+
+.conversation-menu button:hover {
+  background: #fff1f0;
+}
+
 @media (max-width: 760px) {
   .app-shell {
+    height: 100dvh;
     padding: 10px;
     gap: 10px;
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .conversation-sidebar {
-    min-height: auto;
-    max-height: 220px;
+    height: 190px;
+    min-height: 0;
+    max-height: none;
   }
 
   .conversation-list {
@@ -429,8 +533,9 @@ textarea:disabled {
   }
 
   .chat-shell {
-    min-height: calc(100vh - 250px);
-    grid-template-rows: auto minmax(300px, 1fr) auto;
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .chat-header {
@@ -443,7 +548,7 @@ textarea:disabled {
   }
 
   .chat-messages {
-    min-height: 300px;
+    min-height: 0;
     padding: 12px;
   }
 
@@ -452,7 +557,7 @@ textarea:disabled {
   }
 
   .composer-row {
-    grid-template-columns: 38px minmax(0, 1fr) 58px;
+    grid-template-columns: 38px auto minmax(0, 1fr) 58px;
     gap: 8px;
   }
 
@@ -464,5 +569,11 @@ textarea:disabled {
   .send-btn {
     height: 40px;
     padding: 0 10px;
+  }
+
+  .mode-toggle {
+    height: 40px;
+    padding: 0 8px;
+    font-size: 12px;
   }
 }

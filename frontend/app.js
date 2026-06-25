@@ -12,15 +12,38 @@ const imageName = document.getElementById('imageName');
 const conversationList = document.getElementById('conversationList');
 
 const STORAGE_KEY = 'vehicle-chat-conversations-v1';
+const AI_MODE_KEY = 'vehicle-chat-ai-mode-v1';
+
+const conversationMenu = document.createElement('div');
+conversationMenu.className = 'conversation-menu';
+conversationMenu.hidden = true;
+conversationMenu.innerHTML = '<button type="button" data-action="delete">删除</button>';
+document.body.appendChild(conversationMenu);
+
+const btnAiMode = document.createElement('button');
+btnAiMode.id = 'btnAiMode';
+btnAiMode.type = 'button';
+btnAiMode.className = 'mode-toggle active';
+btnAiMode.setAttribute('aria-pressed', 'true');
+btnAiMode.title = '切换 AI 模式';
+
+const composerRow = document.querySelector('.composer-row');
+if (composerRow && chatInput) {
+  composerRow.insertBefore(btnAiMode, chatInput);
+}
 
 const state = {
   messages: [],
   conversations: [],
   activeConversationId: '',
-  selectedImage: null,
-  selectedImageBase64: '',
-  selectedImageUrl: '',
+  selectedImages: [],
   sending: false,
+  abortController: null,
+  currentAiBubble: null,
+  currentUserMessage: null,
+  currentFinalContent: '',
+  menuConversationId: '',
+  aiMode: localStorage.getItem(AI_MODE_KEY) !== 'off',
 };
 
 const TOOL_LABELS = {
@@ -72,8 +95,47 @@ function getMessageText(message) {
 }
 
 function getMessageImage(message) {
-  if (!Array.isArray(message.content)) return '';
-  return message.content.find((item) => item.type === 'image_url')?.image_url?.url || '';
+  return getMessageImages(message)[0] || '';
+}
+
+function getMessageImages(message) {
+  if (!Array.isArray(message.content)) return [];
+  return message.content
+    .filter((item) => item.type === 'image_url')
+    .map((item) => item.image_url?.url || '')
+    .filter(Boolean);
+}
+
+function stripMessageImages(message) {
+  if (!Array.isArray(message.content)) return message;
+  return {
+    ...message,
+    content: message.content.map((item) => {
+      if (item?.type !== 'image_url') return item;
+      return {
+        ...item,
+        image_url: {
+          ...(item.image_url || {}),
+          url: '',
+        },
+      };
+    }),
+  };
+}
+
+function prepareMessagesForStorage(messages) {
+  return messages.map(stripMessageImages);
+}
+
+function prepareMessagesForRequest(messages, currentMessage) {
+  return messages.map((message) => (message === currentMessage ? message : stripMessageImages(message)));
+}
+
+function sanitizeConversationForStorage(conversation) {
+  return {
+    ...conversation,
+    messages: prepareMessagesForStorage(conversation.messages || []),
+  };
 }
 
 function getConversationTitle(messages) {
@@ -87,14 +149,20 @@ function getConversationTitle(messages) {
 function loadConversations() {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    state.conversations = Array.isArray(data) ? data : [];
+    state.conversations = Array.isArray(data) ? data.map(sanitizeConversationForStorage) : [];
   } catch (e) {
     state.conversations = [];
   }
 }
 
 function saveConversations() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
+  const sanitized = state.conversations.map(sanitizeConversationForStorage);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+    state.conversations = sanitized;
+  } catch (e) {
+    console.warn('Unable to persist conversation history.', e);
+  }
 }
 
 function upsertCurrentConversation() {
@@ -109,7 +177,7 @@ function upsertCurrentConversation() {
     id: state.activeConversationId,
     title: getConversationTitle(state.messages),
     updatedAt: now,
-    messages: state.messages,
+    messages: prepareMessagesForStorage(state.messages),
   };
 
   if (existing) {
@@ -143,7 +211,46 @@ function renderConversationList() {
 
   conversationList.querySelectorAll('.conversation-item').forEach((item) => {
     item.addEventListener('click', () => openConversation(item.dataset.id));
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      showConversationMenu(item.dataset.id, event.clientX, event.clientY);
+    });
   });
+}
+
+function showConversationMenu(id, x, y) {
+  state.menuConversationId = id;
+  conversationMenu.hidden = false;
+  conversationMenu.style.left = `${x}px`;
+  conversationMenu.style.top = `${y}px`;
+
+  const rect = conversationMenu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 8);
+  const top = Math.min(y, window.innerHeight - rect.height - 8);
+  conversationMenu.style.left = `${Math.max(8, left)}px`;
+  conversationMenu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideConversationMenu() {
+  conversationMenu.hidden = true;
+  state.menuConversationId = '';
+}
+
+function deleteConversation(id) {
+  if (!id || (state.sending && id === state.activeConversationId)) return;
+
+  state.conversations = state.conversations.filter((item) => item.id !== id);
+
+  if (state.activeConversationId === id) {
+    state.activeConversationId = '';
+    state.messages = [];
+    resetComposer();
+    renderMessages();
+  }
+
+  saveConversations();
+  renderConversationList();
+  hideConversationMenu();
 }
 
 function getConversationPreview(messages) {
@@ -193,6 +300,10 @@ function createBubble(role, options = {}) {
   if (options.text) content.textContent = options.text;
   bubble.appendChild(content);
 
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  bubble.appendChild(actions);
+
   row.appendChild(bubble);
   chatMessages.appendChild(row);
   scrollToBottom();
@@ -202,6 +313,7 @@ function createBubble(role, options = {}) {
     bubble,
     content,
     steps: bubble.querySelector('.tool-steps'),
+    actions,
   };
 }
 
@@ -217,6 +329,23 @@ function addUserBubble(message) {
 function addAssistantMessage(message) {
   const bubble = createBubble('assistant');
   setAssistantContent(bubble, getMessageText(message) || '已完成。');
+}
+
+function addUserBubbleWithImages(message) {
+  const text = getMessageText(message);
+  const imageUrls = getMessageImages(message);
+  const parts = [];
+
+  if (imageUrls.length) {
+    parts.push(`
+      <div class="message-image-grid">
+        ${imageUrls.map((imageUrl, index) => `<img class="message-image" src="${imageUrl}" alt="uploaded vehicle image ${index + 1}">`).join('')}
+      </div>
+    `);
+  }
+
+  if (text) parts.push(`<div>${escapeHtml(text).replace(/\n/g, '<br>')}</div>`);
+  createBubble('user', { html: parts.join('') || '(empty message)' });
 }
 
 function addAssistantBubble() {
@@ -235,7 +364,7 @@ function renderMessages() {
   }
 
   state.messages.forEach((message) => {
-    if (message.role === 'user') addUserBubble(message);
+    if (message.role === 'user') addUserBubbleWithImages(message);
     if (message.role === 'assistant') addAssistantMessage(message);
   });
 }
@@ -260,6 +389,39 @@ function setAssistantContent(aiBubble, markdown, isError = false) {
   scrollToBottom();
 }
 
+function addRegenerateButton(aiBubble, userMessage) {
+  if (!aiBubble?.actions || !userMessage) return;
+  aiBubble.actions.innerHTML = '';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'regenerate-btn';
+  button.textContent = '重新生成';
+  button.addEventListener('click', () => regenerateResponse(userMessage, aiBubble));
+  aiBubble.actions.appendChild(button);
+  scrollToBottom();
+}
+
+function clearAssistantActions(aiBubble) {
+  if (aiBubble?.actions) aiBubble.actions.innerHTML = '';
+}
+
+function updateAiModeButton() {
+  btnAiMode.classList.toggle('active', state.aiMode);
+  btnAiMode.setAttribute('aria-pressed', String(state.aiMode));
+  btnAiMode.textContent = state.aiMode ? 'AI模式' : '普通识别';
+  btnAiMode.title = state.aiMode
+    ? 'AI模式已开启，点击切换为普通三模型识别'
+    : '普通三模型识别已开启，点击切换为AI模式';
+}
+
+function toggleAiMode() {
+  if (state.sending) return;
+  state.aiMode = !state.aiMode;
+  localStorage.setItem(AI_MODE_KEY, state.aiMode ? 'on' : 'off');
+  updateAiModeButton();
+}
+
 function scrollToBottom() {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -272,97 +434,21 @@ function autoResizeInput() {
 function setSending(sending) {
   state.sending = sending;
   chatInput.disabled = sending;
-  btnSend.disabled = sending;
+  btnSend.disabled = false;
   btnAttach.disabled = sending;
   btnRemoveImage.disabled = sending;
   btnNewChat.disabled = sending;
   btnClear.disabled = sending;
-  btnSend.textContent = sending ? '发送中' : '发送';
-}
-
-function updateImageChip() {
-  imageChip.hidden = !state.selectedImageUrl;
-  imagePreview.src = state.selectedImageUrl || '';
-  imageName.textContent = state.selectedImage?.name || '车辆图片';
-}
-
-function clearSelectedImage() {
-  state.selectedImage = null;
-  state.selectedImageBase64 = '';
-  state.selectedImageUrl = '';
-  fileInput.value = '';
-  updateImageChip();
+  btnAiMode.disabled = sending;
+  btnSend.classList.toggle('stop-mode', sending);
+  btnSend.textContent = sending ? '停止' : '发送';
+  btnSend.title = sending ? '停止生成' : '发送消息';
 }
 
 function resetComposer() {
   chatInput.value = '';
   autoResizeInput();
   clearSelectedImage();
-}
-
-function buildUserMessage(text) {
-  if (state.selectedImageBase64) {
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: text || '请分析这张车辆图片' },
-        { type: 'image_url', image_url: { url: state.selectedImageUrl } }
-      ]
-    };
-  }
-  return { role: 'user', content: text };
-}
-
-async function sendMessage() {
-  const text = chatInput.value.trim();
-  if (state.sending || (!text && !state.selectedImageBase64)) return;
-
-  const message = buildUserMessage(text);
-  state.messages.push(message);
-  addUserBubble(message);
-  upsertCurrentConversation();
-
-  const aiBubble = addAssistantBubble();
-  setSending(true);
-
-  try {
-    let finalContent = '';
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: state.messages })
-    });
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error?.message || `请求失败：${response.status}`);
-    }
-
-    await readSSE(response, (data) => {
-      if (data.type === 'step') addStep(aiBubble, data);
-      if (['message', 'report', 'text'].includes(data.type)) {
-        finalContent = data.content || data.text || '';
-        setAssistantContent(aiBubble, finalContent);
-      }
-      if (data.type === 'error') {
-        finalContent = '';
-        setAssistantContent(aiBubble, data.message || '未知错误', true);
-      }
-      if (data.type === 'done') {
-        setSending(false);
-      }
-    });
-
-    if (finalContent) {
-      state.messages.push({ role: 'assistant', content: finalContent });
-      upsertCurrentConversation();
-    }
-  } catch (e) {
-    setAssistantContent(aiBubble, e.message, true);
-  } finally {
-    setSending(false);
-    resetComposer();
-  }
 }
 
 async function readSSE(response, onEvent) {
@@ -393,31 +479,200 @@ async function readSSE(response, onEvent) {
   }
 }
 
-function processFile(file) {
-  if (!file.type.startsWith('image/')) {
-    createBubble('assistant', { html: '<span class="error-text">请上传图片文件。</span>' });
+function readImageFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve({
+      name: file.name,
+      url: event.target.result,
+      base64: String(event.target.result).split(',')[1] || '',
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+function processFiles(files) {
+  const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith('image/'));
+  if (!imageFiles.length) {
+    createBubble('assistant', { html: '<span class="error-text">Please upload image files.</span>' });
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    state.selectedImage = file;
-    state.selectedImageUrl = event.target.result;
-    state.selectedImageBase64 = state.selectedImageUrl.split(',')[1] || '';
+  Promise.all(imageFiles.map(readImageFile)).then((images) => {
+    state.selectedImages = images;
     updateImageChip();
-  };
-  reader.readAsDataURL(file);
+  });
+}
+
+function processFile(file) {
+  processFiles([file]);
+}
+
+function updateImageChip() {
+  imageChip.hidden = !state.selectedImages.length;
+  imagePreview.src = state.selectedImages[0]?.url || '';
+  imageName.textContent = state.selectedImages.length > 1
+    ? `${state.selectedImages.length} images selected`
+    : (state.selectedImages[0]?.name || 'Vehicle image');
+}
+
+function clearSelectedImage() {
+  state.selectedImages = [];
+  fileInput.value = '';
+  updateImageChip();
+}
+
+function buildUserMessage(text) {
+  if (state.selectedImages.length) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: text || 'Please compare these vehicle images.' },
+        ...state.selectedImages.map((image) => ({ type: 'image_url', image_url: { url: image.url } }))
+      ]
+    };
+  }
+  return { role: 'user', content: text };
+}
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (state.sending || (!text && !state.selectedImages.length)) return;
+
+  const message = buildUserMessage(text);
+  state.messages.push(message);
+  addUserBubbleWithImages(message);
+  upsertCurrentConversation();
+
+  await requestAssistantResponse(message);
+}
+
+async function requestAssistantResponse(message, existingAiBubble = null) {
+  const aiBubble = addAssistantBubble();
+  if (existingAiBubble) existingAiBubble.row.remove();
+  clearAssistantActions(aiBubble);
+
+  const controller = new AbortController();
+  state.abortController = controller;
+  state.currentAiBubble = aiBubble;
+  state.currentUserMessage = message;
+  state.currentFinalContent = '';
+  setSending(true);
+
+  try {
+    let finalContent = '';
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: prepareMessagesForRequest(state.messages, message),
+        useAI: state.aiMode,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error?.message || `Request failed: ${response.status}`);
+    }
+
+    await readSSE(response, (data) => {
+      if (data.type === 'step') addStep(aiBubble, data);
+      if (['message', 'report', 'text'].includes(data.type)) {
+        finalContent = data.content || data.text || '';
+        state.currentFinalContent = finalContent;
+        setAssistantContent(aiBubble, finalContent);
+      }
+      if (data.type === 'error') {
+        finalContent = '';
+        state.currentFinalContent = '';
+        setAssistantContent(aiBubble, data.message || 'Unknown error', true);
+      }
+      if (data.type === 'done') {
+        setSending(false);
+      }
+    });
+
+    if (finalContent) {
+      state.messages.push({ role: 'assistant', content: finalContent });
+      upsertCurrentConversation();
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      setAssistantContent(aiBubble, e.message, true);
+    }
+  } finally {
+    setSending(false);
+    state.abortController = null;
+    state.currentAiBubble = null;
+    state.currentUserMessage = null;
+    state.currentFinalContent = '';
+    resetComposer();
+  }
+}
+
+function stopGeneration() {
+  if (!state.sending) return;
+
+  state.abortController?.abort();
+
+  if (state.currentAiBubble) {
+    if (state.currentFinalContent) {
+      setAssistantContent(state.currentAiBubble, state.currentFinalContent);
+    } else {
+      setAssistantContent(state.currentAiBubble, '已停止生成。');
+    }
+    addRegenerateButton(state.currentAiBubble, state.currentUserMessage);
+  }
+
+  setSending(false);
+}
+
+function regenerateResponse(userMessage, aiBubble) {
+  if (state.sending) return;
+
+  while (state.messages.length && state.messages[state.messages.length - 1].role === 'assistant') {
+    state.messages.pop();
+  }
+
+  requestAssistantResponse(userMessage, aiBubble);
 }
 
 btnAttach.addEventListener('click', () => fileInput.click());
+btnAiMode.addEventListener('click', toggleAiMode);
 btnRemoveImage.addEventListener('click', clearSelectedImage);
-btnSend.addEventListener('click', sendMessage);
+btnSend.addEventListener('click', () => {
+  if (state.sending) {
+    stopGeneration();
+    return;
+  }
+
+  sendMessage();
+});
 btnNewChat.addEventListener('click', startNewConversation);
 btnClear.addEventListener('click', startNewConversation);
 
+conversationMenu.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-action="delete"]');
+  if (!button) return;
+  deleteConversation(state.menuConversationId);
+});
+
+document.addEventListener('click', (event) => {
+  if (!conversationMenu.hidden && !conversationMenu.contains(event.target)) {
+    hideConversationMenu();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') hideConversationMenu();
+});
+
+window.addEventListener('resize', hideConversationMenu);
+window.addEventListener('scroll', hideConversationMenu, true);
+
 fileInput.addEventListener('change', (event) => {
-  const file = event.target.files[0];
-  if (file) processFile(file);
+  processFiles(event.target.files);
 });
 
 chatInput.addEventListener('input', autoResizeInput);
@@ -440,11 +695,11 @@ chatMessages.addEventListener('dragleave', () => {
 chatMessages.addEventListener('drop', (event) => {
   event.preventDefault();
   chatMessages.classList.remove('drag-over');
-  const file = event.dataTransfer.files[0];
-  if (file) processFile(file);
+  processFiles(event.dataTransfer.files);
 });
 
 loadConversations();
 renderConversationList();
 renderMessages();
+updateAiModeButton();
 autoResizeInput();
